@@ -26,8 +26,8 @@ from dagr.utils.learning_rate_scheduler import LRSchedule
 from dagr.data.augment import Augmentations
 from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
-
-from dagr.model.networks.dagr_snn import DAGR
+#from dagr.model.networks.dagr_snn import DAGR
+from dagr.model.networks.dagr_fusion import DAGR
 from dagr.model.networks.ema import ModelEMA
 
 
