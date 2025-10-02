@@ -6,7 +6,7 @@ class _STEClamp01(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
         ctx.save_for_backward(x)
-        return x.clamp_(0.0, 1.0)
+        return x.clamp(0.0, 1.0)  # Use non-inplace clamp
 
     @staticmethod
     def backward(ctx, grad_output):
