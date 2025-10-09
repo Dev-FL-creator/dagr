@@ -33,14 +33,14 @@ class DAGR(YOLOX):
         use_image = hasattr(args, 'use_image') and getattr(args, 'use_image')
         print(f"Debug: use_image: {use_image}")
 
-        if use_snn and getattr(args, 'use_image', False) and HybridBackbone is not None:
+        if use_snn and getattr(args, 'use_image', False) and HybridBackbone is not None: # 使用融合模式（事件+图像）
             print(f"Debug: running with hybrid backbone")
             backbone = HybridBackbone(args, height=height, width=width)
             head = HybridHead(num_classes=backbone.num_classes,
                                strides=backbone.strides,
                                in_channels=backbone.out_channels,
                                args=args)
-        elif use_snn:
+        elif use_snn: # 仅使用SNN（仅事件分支）
             yaml_path = getattr(args, 'snn_yaml_path', 'dagr/src/dagr/cfg/snn_yolov8.yaml')
             scale = getattr(args, 'snn_scale', 's')
             backbone = SNNBackboneYAMLWrapper(args, height=height, width=width, yaml_path=yaml_path, scale=scale)
@@ -48,7 +48,7 @@ class DAGR(YOLOX):
                              width=1.0,
                              strides=backbone.strides,
                              in_channels=backbone.out_channels)
-        else:
+        else: # 使用GNN（原始dagr的事件处理模式）
             backbone = Net(args, height=height, width=width)
             head = GNNHead(num_classes=backbone.num_classes,
                            in_channels=backbone.out_channels,
