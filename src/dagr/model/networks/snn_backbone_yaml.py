@@ -1,7 +1,76 @@
+#3D聚合
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from dagr.model.snn.snn_yaml_builder import YAMLBackbone
+
+
+# 可学习的时序聚合模块
+class TemporalConvAgg(nn.Module):
+    """
+    学习式 T 聚合：
+      输入:  [B, C, T, H, W]
+      输出:  [B, C_out, H, W]
+    默认 C_out = C；可选 depthwise 3D + SE 门控 + 可学习时间加权。
+    """
+    def __init__(self, in_channels, out_channels=None, k_t=3, use_se=True, depthwise=True, dropout_p=0.0):
+        super().__init__()
+        out_channels = out_channels or in_channels
+        pad_t = k_t // 2
+
+        groups = in_channels if depthwise else 1
+
+        # 3D: 同时建模时间与空间（不降采样）
+        self.conv3d_1 = nn.Conv3d(
+            in_channels, in_channels,
+            kernel_size=(k_t, 3, 3),
+            padding=(pad_t, 1, 1),
+            groups=groups, bias=False
+        )
+        self.bn3d_1 = nn.BatchNorm3d(in_channels)
+
+        # 仅空间融合，稳定数值/换通道
+        self.conv3d_2 = nn.Conv3d(
+            in_channels, out_channels,
+            kernel_size=(1, 3, 3),
+            padding=(0, 1, 1),
+            groups=1, bias=False
+        )
+        self.bn3d_2 = nn.BatchNorm3d(out_channels)
+
+        self.use_se = use_se
+        if use_se:
+            # 针对时间维的 SE 门控：对每个像素位置学习 T 维权重
+            r = max(8, out_channels // 8)
+            self.se_fc1 = nn.Conv3d(out_channels, r, kernel_size=1)
+            self.se_fc2 = nn.Conv3d(r, out_channels, kernel_size=1)
+
+        self.dropout = nn.Dropout3d(dropout_p) if dropout_p > 0 else nn.Identity()
+
+        # 可学习的“时间加权”头（等价于对 T 维做 1x1x1 的线性整形后再聚合）
+        self.time_proj = nn.Conv3d(out_channels, out_channels, kernel_size=1, bias=False)
+
+        # 最后 2D 1x1 做通道整形（可省略）
+        self.proj2d = nn.Conv2d(out_channels, out_channels, kernel_size=1, bias=False)
+
+    def forward(self, x_bcthw):
+        # x: [B, C, T, H, W]
+        y = F.relu(self.bn3d_1(self.conv3d_1(x_bcthw)))
+        y = self.dropout(y)
+        y = F.relu(self.bn3d_2(self.conv3d_2(y)))  # [B, C_out, T, H, W]
+
+        if self.use_se:
+            # 对 H,W 求均值，保留 T，得到时序门控
+            s = y.mean(dim=(3, 4), keepdim=True)   # [B, C_out, T, 1, 1]
+            s = F.relu(self.se_fc1(s))
+            s = torch.sigmoid(self.se_fc2(s))      # [B, C_out, T, 1, 1]
+            y = y * s
+
+        y = self.time_proj(y)                      # [B, C_out, T, H, W]
+        y = y.sum(dim=2)                           # 聚合 T → [B, C_out, H, W]
+        y = self.proj2d(y)                         # [B, C_out, H, W]
+        return y
 
 
 class SNNBackboneYAMLWrapper(nn.Module):
@@ -10,7 +79,12 @@ class SNNBackboneYAMLWrapper(nn.Module):
         self.height = int(height)
         self.width = int(width)
         temporal_bins = getattr(args, 'snn_temporal_bins', 4)
-        self.backbone = YAMLBackbone(yaml_path=yaml_path, scale=scale, in_ch=2, height=self.height, width=self.width, temporal_bins=temporal_bins)
+
+        self.backbone = YAMLBackbone(
+            yaml_path=yaml_path, scale=scale,
+            in_ch=2, height=self.height, width=self.width,
+            temporal_bins=temporal_bins
+        )
 
         self.out_channels = [256, 512]
         self.strides = [16, 32]
@@ -19,21 +93,64 @@ class SNNBackboneYAMLWrapper(nn.Module):
         self.is_snn = True
         self.num_classes = dict(dsec=2, ncaltech101=100).get(getattr(args, 'dataset', 'dsec'), 2)
 
+        # ---- T 聚合模块（懒初始化：第一次 forward 时基于实际通道创建） ----
+        # YAMLBackbone 返回 p4/p5 形状是 [T, B, C, H, W]，我们聚合到 [B, C, H, W]
+        self._tcm = nn.ModuleDict()  # 键：'p4','p5'
+
+        # 可通过 args 控制
+        self.tcm_enabled = getattr(args, 'tcm_enabled', True)
+        self.tcm_kt = int(getattr(args, 'tcm_k_t', 3))
+        self.tcm_use_se = bool(getattr(args, 'tcm_use_se', True))
+        self.tcm_depthwise = bool(getattr(args, 'tcm_depthwise', True))
+        self.tcm_dropout = float(getattr(args, 'tcm_dropout', 0.0))
+
     def get_output_sizes(self):
         sizes = []
         for s in self.strides:
             sizes.append([max(1, self.height // s), max(1, self.width // s)])
         return [[h, w] for h, w in sizes]
 
+    # 内部：把 [T,B,C,H,W] 聚成 [B,C,H,W]（优先用 TCM，退化为 t-mean） ——
+    def _aggregate_time(self, x_tbchw, level_name: str):
+        if x_tbchw is None:
+            return None
+        # x_tbchw: [T, B, C, H, W]  →  [B, C, T, H, W]
+        x_bcthw = x_tbchw.permute(1, 2, 0, 3, 4).contiguous()
+
+        # T=1 时直接挤掉时间维
+        if x_bcthw.size(2) == 1:
+            return x_bcthw.squeeze(2)
+
+        if not self.tcm_enabled:
+            # 兼容开关：关闭时回退到简单 t-mean
+            return x_tbchw.mean(dim=0)
+
+        key = level_name
+        if key not in self._tcm:
+            in_ch = x_bcthw.size(1)
+            self._tcm[key] = TemporalConvAgg(
+                in_channels=in_ch,
+                out_channels=in_ch,          # 维持通道数不变
+                k_t=self.tcm_kt,
+                use_se=self.tcm_use_se,
+                depthwise=self.tcm_depthwise,
+                dropout_p=self.tcm_dropout
+            ).to(x_bcthw.device, dtype=x_bcthw.dtype)
+
+        return self._tcm[key](x_bcthw)
 
     def forward(self, data, reset: bool = True):
-        # pass Data to backbone; MS_GetT_Voxel will voxelize to [T,B,2,H,W]
+        # 让 backbone 知道目标分辨率
         setattr(data, 'meta_height', self.height)
         setattr(data, 'meta_width', self.width)
+
+        # YAMLBackbone 约定输出: p2,p3,p4,p5 皆为 [T,B,C,H,W] 或 None
         p2, p3, p4, p5 = self.backbone(data)
-        # aggregate time: mean over T -> BCHW
-        p4_bchw = p4.mean(dim=0) if p4 is not None else None
-        p5_bchw = p5.mean(dim=0) if p5 is not None else None
+
+        # 用可学习的 Temporal Conv 聚合，替换原来的 mean over T ——
+        p4_bchw = self._aggregate_time(p4, 'p4')
+        p5_bchw = self._aggregate_time(p5, 'p5')
+
         ret = []
         if p4_bchw is not None:
             ret.append(p4_bchw)
@@ -43,27 +160,88 @@ class SNNBackboneYAMLWrapper(nn.Module):
 
     def forward_time(self, data, reset: bool = True):
         """
-        Return multi-scale features with temporal dimension preserved.
-        Output: dict with keys 'p4','p5' and values [T,B,C,H,W].
+        保持原语义：返回保留时间维的多尺度特征，形状为 [T,B,C,H,W]。
         """
         setattr(data, 'meta_height', self.height)
         setattr(data, 'meta_width', self.width)
         p2, p3, p4, p5 = self.backbone(data)
         ret = {}
-        if p2 is not None:
-            ret["p2"] = p2
-        if p3 is not None:
-            ret["p3"] = p3
-        if p4 is not None:
-            ret["p4"] = p4
-        if p5 is not None:
-            ret["p5"] = p5
+        if p2 is not None: ret["p2"] = p2
+        if p3 is not None: ret["p3"] = p3
+        if p4 is not None: ret["p4"] = p4
+        if p5 is not None: ret["p5"] = p5
         return ret
 
 
 
+#简单T聚合
+
+# import torch
+# import torch.nn as nn
+
+# from dagr.model.snn.snn_yaml_builder import YAMLBackbone
 
 
+# class SNNBackboneYAMLWrapper(nn.Module):
+#     def __init__(self, args, height: int, width: int, yaml_path: str, scale: str = 's'):
+#         super().__init__()
+#         self.height = int(height)
+#         self.width = int(width)
+#         temporal_bins = getattr(args, 'snn_temporal_bins', 4)
+#         self.backbone = YAMLBackbone(yaml_path=yaml_path, scale=scale, in_ch=2, height=self.height, width=self.width, temporal_bins=temporal_bins)
+
+#         self.out_channels = [256, 512]
+#         self.strides = [16, 32]
+#         self.num_scales = 2
+#         self.use_image = False
+#         self.is_snn = True
+#         self.num_classes = dict(dsec=2, ncaltech101=100).get(getattr(args, 'dataset', 'dsec'), 2)
+
+#     def get_output_sizes(self):
+#         sizes = []
+#         for s in self.strides:
+#             sizes.append([max(1, self.height // s), max(1, self.width // s)])
+#         return [[h, w] for h, w in sizes]
+
+
+#     def forward(self, data, reset: bool = True):
+#         # pass Data to backbone; MS_GetT_Voxel will voxelize to [T,B,2,H,W]
+#         setattr(data, 'meta_height', self.height)
+#         setattr(data, 'meta_width', self.width)
+#         p2, p3, p4, p5 = self.backbone(data)
+#         # aggregate time: mean over T -> BCHW
+#         p4_bchw = p4.mean(dim=0) if p4 is not None else None
+#         p5_bchw = p5.mean(dim=0) if p5 is not None else None
+#         ret = []
+#         if p4_bchw is not None:
+#             ret.append(p4_bchw)
+#         if p5_bchw is not None:
+#             ret.append(p5_bchw)
+#         return ret
+
+#     def forward_time(self, data, reset: bool = True):
+#         """
+#         Return multi-scale features with temporal dimension preserved.
+#         Output: dict with keys 'p4','p5' and values [T,B,C,H,W].
+#         """
+#         setattr(data, 'meta_height', self.height)
+#         setattr(data, 'meta_width', self.width)
+#         p2, p3, p4, p5 = self.backbone(data)
+#         ret = {}
+#         if p2 is not None:
+#             ret["p2"] = p2
+#         if p3 is not None:
+#             ret["p3"] = p3
+#         if p4 is not None:
+#             ret["p4"] = p4
+#         if p5 is not None:
+#             ret["p5"] = p5
+#         return ret
+
+
+
+
+#复杂三分支聚合
 
 # import torch
 # import torch.nn as nn
