@@ -12,7 +12,7 @@ class TemporalConvAgg(nn.Module):
     学习式 T 聚合：
       输入:  [B, C, T, H, W]
       输出:  [B, C_out, H, W]
-    默认 C_out = C；可选 depthwise 3D + SE 门控 + 可学习时间加权。
+      C_out = C, depthwise 3D + SE 门控 + 可学习时间加权。
     """
     def __init__(self, in_channels, out_channels=None, k_t=3, use_se=True, depthwise=True, dropout_p=0.0):
         super().__init__()
@@ -41,17 +41,17 @@ class TemporalConvAgg(nn.Module):
 
         self.use_se = use_se
         if use_se:
-            # 针对时间维的 SE 门控：对每个像素位置学习 T 维权重
+            # 针对时间维的 SE 门控：对每个像素位置学习 T 维权重, 学习每个时间切片的重要性
             r = max(8, out_channels // 8)
             self.se_fc1 = nn.Conv3d(out_channels, r, kernel_size=1)
             self.se_fc2 = nn.Conv3d(r, out_channels, kernel_size=1)
 
         self.dropout = nn.Dropout3d(dropout_p) if dropout_p > 0 else nn.Identity()
 
-        # 可学习的“时间加权”头（等价于对 T 维做 1x1x1 的线性整形后再聚合）
+        # 学习每个切片权重
         self.time_proj = nn.Conv3d(out_channels, out_channels, kernel_size=1, bias=False)
 
-        # 最后 2D 1x1 做通道整形（可省略）
+        # 最后 2D 1x1 做通道整形
         self.proj2d = nn.Conv2d(out_channels, out_channels, kernel_size=1, bias=False)
 
     def forward(self, x_bcthw):
@@ -67,7 +67,7 @@ class TemporalConvAgg(nn.Module):
             s = torch.sigmoid(self.se_fc2(s))      # [B, C_out, T, 1, 1]
             y = y * s
 
-        y = self.time_proj(y)                      # [B, C_out, T, H, W]
+        y = self.time_proj(y)                      # [B, C_out, T, H, W],学习每个切片权重
         y = y.sum(dim=2)                           # 聚合 T → [B, C_out, H, W]
         y = self.proj2d(y)                         # [B, C_out, H, W]
         return y
