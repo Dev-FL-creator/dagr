@@ -9,10 +9,18 @@ from dagr.model.snn.snn_yaml_builder import YAMLBackbone
 # 可学习的时序聚合模块
 class TemporalConvAgg(nn.Module):
     """
-    学习式 T 聚合：
-      输入:  [B, C, T, H, W]
-      输出:  [B, C_out, H, W]
-      C_out = C, depthwise 3D + SE 门控 + 可学习时间加权。
+    可学习的时序聚合模块（TCM）。
+
+    输入:  [B, C, T, H, W]
+    输出:  [B, C_out, H, W]
+
+    结构:
+      - 3D depthwise conv 建模时空局部关系
+      - 3D conv 融合并调整通道
+      - 可选 SE 门控（按时间维重标定）
+      - 1x1x1 的 time_proj 学习每个时间切片权重
+      - 对 T 求和聚合
+      - 最后用 2D 1x1 proj2d 调整到目标通道
     """
     def __init__(self, in_channels, out_channels=None, k_t=3, use_se=True, depthwise=True, dropout_p=0.0):
         super().__init__()
@@ -74,6 +82,11 @@ class TemporalConvAgg(nn.Module):
 
 
 class SNNBackboneYAMLWrapper(nn.Module):
+    """
+    包装 YAMLBackbone：
+      - YAMLBackbone 负责事件体素化与特征提取，输出 p2,p3,p4,p5 形如 [T, B, C, H, W]
+      - 本包装器在 p4/p5 上做 T 维聚合（TCM），输出标准 FPN-like 的二维特征 [B, C, H, W]
+    """
     def __init__(self, args, height: int, width: int, yaml_path: str, scale: str = 's'):
         super().__init__()
         self.height = int(height)
@@ -85,7 +98,7 @@ class SNNBackboneYAMLWrapper(nn.Module):
             in_ch=2, height=self.height, width=self.width,
             temporal_bins=temporal_bins
         )
-
+        # 下游检测头接口
         self.out_channels = [256, 512]
         self.strides = [16, 32]
         self.num_scales = 2
@@ -93,8 +106,8 @@ class SNNBackboneYAMLWrapper(nn.Module):
         self.is_snn = True
         self.num_classes = dict(dsec=2, ncaltech101=100).get(getattr(args, 'dataset', 'dsec'), 2)
 
-        # ---- T 聚合模块（懒初始化：第一次 forward 时基于实际通道创建） ----
-        # YAMLBackbone 返回 p4/p5 形状是 [T, B, C, H, W]，我们聚合到 [B, C, H, W]
+        # TCM 聚合模块（第一次 forward 时基于实际通道创建） 
+        # YAMLBackbone 返回 p4/p5 形状是 [T, B, C, H, W]，聚合到 [B, C, H, W]
         self._tcm = nn.ModuleDict()  # 键：'p4','p5'
 
         # 可通过 args 控制
@@ -110,7 +123,7 @@ class SNNBackboneYAMLWrapper(nn.Module):
             sizes.append([max(1, self.height // s), max(1, self.width // s)])
         return [[h, w] for h, w in sizes]
 
-    # 内部：把 [T,B,C,H,W] 聚成 [B,C,H,W]（优先用 TCM，退化为 t-mean） ——
+    # 内部：把 [T,B,C,H,W] 聚成 [B,C,H,W]（优先用 TCM，退化为 t-mean）
     def _aggregate_time(self, x_tbchw, level_name: str):
         if x_tbchw is None:
             return None
