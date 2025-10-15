@@ -77,6 +77,7 @@ if [[ "${DISTRIBUTED:-0}" -eq 1 ]]; then
     --exp_trend "$EXP_TREND" \
     --use_snn_backbone \
     --use_image \
+    --img_net resnet50 \
     --snn_yaml_path "$SNN_YAML" \
     --snn_scale "$SNN_SCALE" \
     --snn_temporal_bins "$SNN_TEMPORAL_BINS" \
@@ -98,6 +99,7 @@ else
     --exp_trend "$EXP_TREND" \
     --use_snn_backbone \
     --use_image \
+    --img_net resnet50 \
     --snn_yaml_path "$SNN_YAML" \
     --snn_scale "$SNN_SCALE" \
     --snn_temporal_bins "$SNN_TEMPORAL_BINS" \
