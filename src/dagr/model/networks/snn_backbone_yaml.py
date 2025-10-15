@@ -70,10 +70,10 @@ class TemporalConvAgg(nn.Module):
 
         if self.use_se:
             # 对 H,W 求均值，保留 T，得到时序门控
-            s = y.mean(dim=(3, 4), keepdim=True)   # [B, C_out, T, 1, 1]
-            s = F.relu(self.se_fc1(s))
-            s = torch.sigmoid(self.se_fc2(s))      # [B, C_out, T, 1, 1]
-            y = y * s
+            s = y.mean(dim=(3, 4), keepdim=True)   # 对空间维度求平均，保留时间维度T
+            s = F.relu(self.se_fc1(s))             # MLP层学习每个通道随时间的变化
+            s = torch.sigmoid(self.se_fc2(s))      # 学习到的时序权重
+            y = y * s                              # 乘回原特征 调整各通道在当前T切片的权重
 
         y = self.time_proj(y)                      # [B, C_out, T, H, W],学习每个切片权重
         y = y.sum(dim=2)                           # 聚合 T → [B, C_out, H, W]
