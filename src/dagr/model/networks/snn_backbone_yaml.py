@@ -152,6 +152,7 @@ class SNNBackboneYAMLWrapper(nn.Module):
 
         return self._tcm[key](x_bcthw)
 
+    # 标准 forward: 聚合时间维，返回二维特征 用于单snn分支
     def forward(self, data, reset: bool = True):
         # 让 backbone 知道目标分辨率
         setattr(data, 'meta_height', self.height)
@@ -171,6 +172,7 @@ class SNNBackboneYAMLWrapper(nn.Module):
             ret.append(p5_bchw)
         return ret
 
+    # 直接返回未经聚合的时序特征，做双分支融合的时候才用于融合前，融合中才简单mean T聚合
     def forward_time(self, data, reset: bool = True):
         """
         保持原语义：返回保留时间维的多尺度特征，形状为 [T,B,C,H,W]。
