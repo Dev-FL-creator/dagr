@@ -59,4 +59,5 @@ $PYTHON "$TRAIN_SCRIPT" \
   --snn_scale "$SNN_SCALE" \
   --snn_temporal_bins "$SNN_TEMPORAL_BINS" \
   --dataset_directory "$DATASET_DIR" \
+  "$@" \
   2>&1 | tee "$LOG_FILE"

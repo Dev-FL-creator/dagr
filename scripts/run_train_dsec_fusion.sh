@@ -85,6 +85,7 @@ if [[ "${DISTRIBUTED:-0}" -eq 1 ]]; then
     --debug_unused_params \
     --print_param_index_map \
     "${NO_EVAL_FLAG[@]}" \
+    "$@" \
     2>&1 | tee "$LOG_FILE"
 else
   $PYTHON "$TRAIN_SCRIPT" \
@@ -105,6 +106,7 @@ else
     --snn_temporal_bins "$SNN_TEMPORAL_BINS" \
     --dataset_directory "$DATASET_DIR" \
     "${NO_EVAL_FLAG[@]}" \
+    "$@" \
     2>&1 | tee "$LOG_FILE"
 fi
 
