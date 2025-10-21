@@ -9,7 +9,7 @@ def BASE_FLAGS():
     parser.add_argument('--dataset_directory', type=Path, default=argparse.SUPPRESS, help="Path to the directory containing the dataset.")
     parser.add_argument('--output_directory', type=Path, default=argparse.SUPPRESS, help="Path to the logging directory.")
     parser.add_argument("--checkpoint", type=Path, default=argparse.SUPPRESS, help="Path to the directory containing the checkpoint.")
-    parser.add_argument('--resume_checkpoint', type=Path, help='Path to checkpoint file for resuming training')
+    #parser.add_argument('--resume_checkpoint', type=Path, help='Path to checkpoint file for resuming training')
     parser.add_argument("--img_net", default=argparse.SUPPRESS, type=str)
     parser.add_argument("--img_net_checkpoint", type=Path, default=argparse.SUPPRESS)
 
