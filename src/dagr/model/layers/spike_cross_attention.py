@@ -1,7 +1,6 @@
-# 归一化多脉冲
-
 import torch
 import torch.nn as nn
+
 
 # 定义多脉冲量化参数
 quant = 4
@@ -25,19 +24,23 @@ class Quant(torch.autograd.Function):
         grad_input[i > ctx.max] = 0
         return grad_input, None, None
 
+# 全局单例，避免每个模块创建新的实例
+_QUANT_FUNC = Quant()
+
 class MultiSpike_norm4(nn.Module):
     def __init__(
             self,
             Vth=1.0,
-            T=T,  # 在T上进行Norm
+            T=T,
     ):
         super().__init__()
-        self.spike = Quant()
-        self.Vth = Vth
-        self.T = T
+        self.register_buffer('T_value', torch.tensor(float(T)))
+        self.register_buffer('Vth_value', torch.tensor(float(Vth)))
     
     def forward(self, x):
-        return self.spike.apply(x) / self.T
+        # 使用全局_QUANT_FUNC而不是实例成员
+        return _QUANT_FUNC.apply(x) / self.T_value
+
 
 class CrossAttention(nn.Module):
     """
@@ -92,7 +95,6 @@ class CrossAttention(nn.Module):
         return x
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
-
         if query.dim() == 4 and key.dim() == 4 and value.dim() == 4:
             pass
         else:
