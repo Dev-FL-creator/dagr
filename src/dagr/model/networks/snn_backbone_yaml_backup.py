@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch_geometric
 
 from dagr.model.snn.snn_yaml_builder import YAMLBackbone
 
