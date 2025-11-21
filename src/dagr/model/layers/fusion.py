@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from dagr.model.layers.spike_cross_attention import CrossAttention
 
@@ -84,7 +85,6 @@ class SpikeCAFR(nn.Module):
 
     def forward(self, rgb: torch.Tensor, evt: torch.Tensor) -> torch.Tensor:
         if evt.shape[3:] != rgb.shape[2:]:  # evt是[T,B,C,H,W], rgb是[B,C,H,W]
-            import torch.nn.functional as F
             T, B = evt.shape[:2]
             evt_resized = F.interpolate(
                 evt.flatten(0,1),  # [T*B,C,H,W]
