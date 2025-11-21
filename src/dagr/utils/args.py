@@ -57,6 +57,14 @@ def BASE_FLAGS():
     parser.add_argument("--snn_scale", default=argparse.SUPPRESS, type=str, help="Model scale for SNN backbone (e.g., s/m/l)")
     parser.add_argument("--snn_temporal_bins", type=int, default=4, help="Temporal bins T for SNN voxelization (default: 4)")
 
+    # MAD-related parameters
+    parser.add_argument("--mad_flow_checkpoint", type=Path, default=argparse.SUPPRESS,
+                        help="Path to the pre-trained EVFlowNet checkpoint for the MAD branch.")
+    parser.add_argument("--no_load_mad_flow", action="store_true",
+                        help="Do not load a pre-trained EVFlowNet checkpoint; use random weights instead for debugging.")
+    parser.add_argument("--use_checkpointing", action="store_true",
+                        help="Use activation checkpointing to save VRAM at the cost of computation.")
+
     return parser
 
 def FLAGS():
@@ -90,6 +98,9 @@ def FLAGS():
 
     if "checkpoint" in args:
         args.checkpoint = Path(args.checkpoint)
+
+    if hasattr(args, 'mad_flow_checkpoint') and args.mad_flow_checkpoint is not None:
+        args.mad_flow_checkpoint = Path(args.mad_flow_checkpoint)
 
     return args
 

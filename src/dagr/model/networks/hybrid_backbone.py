@@ -11,7 +11,7 @@ class HybridBackbone(nn.Module):
     RGB backbone with progressive fusion from SNN temporal features via SpikeCAFR.
 
     Exposes:
-      - out_channels = [32,64,256,256]
+      - out_channels = [32,64,256,512]
       - strides = [4, 8, 16, 32]
       - get_output_sizes(height,width) compatible with YOLOXHead
     """

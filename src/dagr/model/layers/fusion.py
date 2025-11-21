@@ -83,13 +83,24 @@ class SpikeCAFR(nn.Module):
         return x
 
     def forward(self, rgb: torch.Tensor, evt: torch.Tensor) -> torch.Tensor:
+        if evt.shape[3:] != rgb.shape[2:]:  # evt是[T,B,C,H,W], rgb是[B,C,H,W]
+            import torch.nn.functional as F
+            T, B = evt.shape[:2]
+            evt_resized = F.interpolate(
+                evt.flatten(0,1),  # [T*B,C,H,W]
+                size=rgb.shape[2:], 
+                mode='bilinear', 
+                align_corners=False
+            )
+            evt = evt_resized.view(T, B, evt_resized.shape[1], *rgb.shape[2:])
+
         # 预投射
         rgb = self.bn_rgb_in(self.conv_rgb_in(rgb))
         T, B, C_evt, H, W = evt.shape
         evt = self.bn_evt_in(self.conv_evt_in(evt.flatten(0, 1))).view(T, B, self.out_channels, H, W)
 
         # element-wise interaction (REFusion-like)
-        evt_mean = evt.mean(dim=0)  # [B,C,H,W]
+        evt_mean = evt.mean(dim=0)
         mul = rgb * evt_mean
         rgb_enh = rgb + mul
         evt_enh = evt + mul.unsqueeze(0)
