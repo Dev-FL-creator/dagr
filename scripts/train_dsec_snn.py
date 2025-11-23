@@ -26,8 +26,14 @@ from dagr.utils.learning_rate_scheduler import LRSchedule
 from dagr.data.augment import Augmentations
 from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
+#单分支
 #from dagr.model.networks.dagr_snn import DAGR
-from dagr.model.networks.dagr_fusion import DAGR
+
+#双分支单检测头
+#from dagr.model.networks.dagr_fusion import DAGR
+#双分支双检测头
+from dagr.model.networks.dagr_fusion_seperate_heads import DAGR
+
 from dagr.model.networks.ema import ModelEMA
 
 
