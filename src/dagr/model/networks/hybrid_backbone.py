@@ -4,7 +4,7 @@ import torch.nn as nn
 from dagr.model.networks.image_backbone import ImageBackbone
 from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
 from dagr.model.layers.fusion import SpikeCAFR
-
+from dagr.model.layers.fusion_TAFR import SpikeCAFR
 
 class HybridBackbone(nn.Module):
     """
