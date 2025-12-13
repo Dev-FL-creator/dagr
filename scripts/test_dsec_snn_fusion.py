@@ -88,7 +88,7 @@ if __name__ == '__main__':
     
     model = model.cuda()
     
-    print("Creating temporal modules with dummy forward pass...")
+    #print("Creating temporal modules with dummy forward pass...")
     dummy_data = next(iter(test_loader))
     dummy_data = dummy_data.cuda()
     dummy_data = format_data(dummy_data)
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     with torch.no_grad():
         try:
             model(dummy_data)
-            print("Dummy forward pass completed - temporal modules created")
+            #print("Dummy forward pass completed - temporal modules created")
         except Exception as e:
             print(f"Dummy forward pass failed: {e}")
     
