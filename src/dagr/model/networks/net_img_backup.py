@@ -66,7 +66,7 @@ class HookModule(torch.nn.Module):
             if torch.cuda.is_available():
                 self.output_dconv = self.output_dconv.cuda()
 
-     def replace_fc_layer(self):
+    def replace_fc_layer(self):
         """创建一个完全避免 CUBLAS 的 fc 层"""
         print("Creating CPU-based fc layer to avoid CUBLAS issue")
 
