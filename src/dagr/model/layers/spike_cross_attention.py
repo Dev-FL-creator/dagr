@@ -107,6 +107,10 @@ class CrossAttention(nn.Module):
         kh = split_heads(k)
         vh = split_heads(v)
 
+        qh = qh.contiguous().float()
+        kh = kh.contiguous().float()
+        vh = vh.contiguous().float()
+
         # attention
         attn = torch.matmul(qh, kh.transpose(-2, -1)) * self.scale  # [T,B,H,NQ,NK]
         attn = torch.softmax(attn, dim=-1)

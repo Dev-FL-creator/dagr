@@ -14,7 +14,7 @@ TORCHRUN=torchrun
 TRAIN_SCRIPT=scripts/train_dsec_snn_v3.py
 
 OUTPUT_DIR=/media/data/hucao/jinkai/dagr/logs_snn_fusion_v3
-EXP_NAME=event_only_sdtv3_bs8
+EXP_NAME=fusion_event_image_sdtv3_bs8
 
 # ------------------------------------------------------------------------------
 # 模型配置切换区 (根据需求取消注释其中一个板块)
@@ -51,7 +51,7 @@ SDT_SR_RATIO=4                  # 保持 4 以获得较好的表征能力
 # ------------------------------------------------------------------------------
 
 # 训练参数 (per-GPU)
-BATCH_SIZE=8
+BATCH_SIZE=2
 EPOCHS=801
 LR=0.0002
 WEIGHT_DECAY=0.00001
@@ -98,6 +98,8 @@ COMMON_ARGS=(
   --sdt_norm "$SDT_NORM"
   --sdt_sr_ratio "$SDT_SR_RATIO"
   --dataset_directory "$DATASET_DIR"
+  --use_image
+  --img_net resnet50
   "${NO_EVAL_FLAG[@]}"
 )
 

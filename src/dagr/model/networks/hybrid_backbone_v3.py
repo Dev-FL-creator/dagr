@@ -64,6 +64,12 @@ class HybridBackbone(nn.Module):
         if self.use_sdt_v3:
             event_feats = self.snn(data)
             rgb_feats = [rgb_c3, rgb_c4, rgb_c5]
+            event_feats_5d = []
+            for feat in event_feats:
+                if feat.dim() == 4:
+                    feat = feat.unsqueeze(0)  # 添加T维度
+                event_feats_5d.append(feat)
+            event_feats = event_feats_5d
         else:
             snn_feats = self.snn.forward_time(data)
             event_feats = [snn_feats.get("p2"), snn_feats.get("p3"), snn_feats.get("p4"), snn_feats.get("p5")]
