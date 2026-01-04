@@ -171,6 +171,7 @@ class ChannelMLP(nn.Module):
 
 class LinearAttentionFunction(torch.autograd.Function):
     @staticmethod
+    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, q, k, v, scale):
         kv = (k.unsqueeze(-1) * v.unsqueeze(-2)).sum(dim=-3)
         out = (q.unsqueeze(-1) * kv.unsqueeze(-3)).sum(dim=-2) * scale
@@ -179,6 +180,7 @@ class LinearAttentionFunction(torch.autograd.Function):
         return out
     
     @staticmethod
+    @torch.cuda.amp.custom_bwd
     def backward(ctx, grad_out):
         q, k, v, kv = ctx.saved_tensors
         scale = ctx.scale
@@ -186,9 +188,7 @@ class LinearAttentionFunction(torch.autograd.Function):
         grad_out_scaled = grad_out * scale
         
         grad_q = (grad_out_scaled.unsqueeze(-2) * kv.unsqueeze(-3)).sum(dim=-1)
-        
         grad_kv = (q.unsqueeze(-1) * grad_out_scaled.unsqueeze(-2)).sum(dim=-3)
-        
         grad_k = (grad_kv.unsqueeze(-3) * v.unsqueeze(-2)).sum(dim=-1)
         grad_v = (grad_kv.unsqueeze(-3) * k.unsqueeze(-1)).sum(dim=-2)
         
