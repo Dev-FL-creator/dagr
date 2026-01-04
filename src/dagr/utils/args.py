@@ -89,6 +89,9 @@ def BASE_FLAGS():
                         help="Spatial-Reduction ratio / Value expansion ratio for SDT-V3 attention (default: 1). Checkpoints often use 4.")
     parser.add_argument("--load_pretrained_weight", default=None, type=str,
                         help="Path to pretrained .pth weights for SDT-V3 backbone (classification head will be skipped)")
+    parser.add_argument('--sdt_temporal_pool', type=str, default='attention',
+                    choices=['mean', 'last', 'max', 'attention', 'conv', 'learned_weights'],
+                    help='Temporal pooling mode for SNN output')
 
     return parser
 
