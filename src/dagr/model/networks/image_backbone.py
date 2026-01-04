@@ -62,8 +62,27 @@ class ImageBackbone(nn.Module):
         # output taps
         self.proj_out_l3 = nn.Conv2d(self.net.output_channels[0], self.output_channels[0], kernel_size=1, stride=1, padding=0, bias=False)
         self.proj_out_l4 = nn.Conv2d(self.net.output_channels[1], self.output_channels[1], kernel_size=1, stride=1, padding=0, bias=False)
+        
+        # Flag to control return format (set externally for image-only mode)
+        self.image_only_mode = False
 
     def forward(self, image: torch.Tensor):
+        """
+        Forward pass for ImageBackbone.
+        
+        Args:
+            image: Input image tensor, can be either:
+                - torch.Tensor with shape (B, C, H, W) for direct image input
+                - Data object with .image attribute for compatibility
+        
+        Returns:
+            If image_only_mode=True: outputs_mapped (list of 2 tensors)
+            Otherwise: (features_mapped, outputs_mapped) tuple
+        """
+        # Handle Data object input (compatibility with training pipeline)
+        if hasattr(image, 'image'):
+            image = image.image
+        
         features, outputs = self.net(image)
 
         # Clone lists to avoid in-place side-effects
@@ -79,6 +98,10 @@ class ImageBackbone(nn.Module):
             outputs_mapped[0] = self.proj_out_l3(outputs_mapped[0])
             outputs_mapped[1] = self.proj_out_l4(outputs_mapped[1])
 
-        return features_mapped, outputs_mapped
+        # Return format depends on mode
+        if self.image_only_mode:
+            return outputs_mapped  # Only return outputs for image-only mode
+        else:
+            return features_mapped, outputs_mapped  # Return tuple for hybrid mode
 
 

@@ -28,7 +28,7 @@ from dagr.data.augment import Augmentations
 from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
 
-from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
+from dagr.model.networks.dagr_image_only import DAGR
 from dagr.model.networks.ema import ModelEMA
 
 
