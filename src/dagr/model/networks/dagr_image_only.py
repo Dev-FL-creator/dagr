@@ -12,6 +12,7 @@ try:
 except Exception:
     SNNBackboneYAMLWrapper = None
 from dagr.model.networks.hybrid_backbone_v3 import HybridBackbone
+from dagr.model.networks.image_backbone import ImageBackbone
 from dagr.model.backbones.sdt_v3 import SpikformerV3Extractor
 from dagr.model.layers.spline_conv import SplineConvToDense
 from dagr.model.layers.conv import ConvBlock
@@ -39,7 +40,6 @@ class DAGR(YOLOX):
         # 如果 use_image=True 且 no_events=True，只使用 ResNet image 分支（单分支模式）
         if use_image and no_events:
             print(f"Debug: running with IMAGE ONLY mode (ResNet backbone)")
-            from dagr.model.networks.image_backbone import ImageBackbone
             
             # 使用 ResNet 作为 backbone
             backbone = ImageBackbone(args, height=height, width=width)
