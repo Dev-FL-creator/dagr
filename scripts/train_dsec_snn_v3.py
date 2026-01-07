@@ -200,7 +200,7 @@ if __name__ == '__main__':
     print("init datasets")
     dataset_path = args.dataset_directory / args.dataset
 
-    forced_scale = 1  #设置为4，缩放分辨率，宽度和高度都缩小到原来的 1/4。提高训练速度和减小显存（用于快速验证）
+    forced_scale = 1  #设置为2，缩放分辨率，宽度和高度都缩小到原来的 1/2。提高训练速度和减小显存（用于快速验证）
     print(f"\033[93mWARNING: Forcing data scale to {forced_scale} to fit in 24GB VRAM.\033[0m")
     
     train_dataset = DSEC(root=dataset_path, split="train", transform=augmentations.transform_training, debug=False,

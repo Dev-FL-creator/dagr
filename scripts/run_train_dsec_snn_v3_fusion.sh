@@ -7,14 +7,16 @@ export DISTRIBUTED=0
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 export WANDB_MODE=disabled
 export NO_EVAL=${NO_EVAL:-0}
+# 是否开启mad第三分支训练，1不开启，0开启
+export NO_MAD=${NO_MAD:-1}
 
 # Python 与 启动命令
 PYTHON=python
 TORCHRUN=torchrun
-TRAIN_SCRIPT=scripts/train_dsec_snn_v3.py
+TRAIN_SCRIPT=scripts/train_dsec_snn_fusion_v3.py
 
 OUTPUT_DIR=/media/data/hucao/jinkai/dagr/logs_snn_fusion_v3
-EXP_NAME=fusion_event_image_sdtv3_bs8
+EXP_NAME=fusion_event_image_sdtv3_bs2
 
 # ------------------------------------------------------------------------------
 # 模型配置切换区 (根据需求取消注释其中一个板块)
@@ -69,11 +71,21 @@ echo "Training log will be saved to: $LOG_FILE"
 echo "Starting training..."
 echo "Mode: PRETRAINED_WEIGHT='${PRETRAINED_WEIGHT}'"
 echo "Dims: ${SDT_EMBED_DIMS}"
+if [[ "${NO_MAD}" -eq 1 ]]; then
+  echo "MAD branch: DISABLED (--no_mad). Using 2-branch mode (Fused + RGB only)."
+else
+  echo "MAD branch: ENABLED. Using 3-branch mode (Fused + RGB + MAD)."
+fi
 
 # 可选标志处理
 NO_EVAL_FLAG=()
 if [[ "${NO_EVAL}" -eq 1 ]]; then
   NO_EVAL_FLAG+=(--no_eval)
+fi
+
+NO_MAD_FLAG=()
+if [[ "${NO_MAD}" -eq 1 ]]; then
+  NO_MAD_FLAG+=(--no_mad)
 fi
 
 # 组装通用参数
@@ -101,6 +113,7 @@ COMMON_ARGS=(
   --use_image
   --img_net resnet50
   "${NO_EVAL_FLAG[@]}"
+  "${NO_MAD_FLAG[@]}"  #移除开启三分支
 )
 
 # 仅当 SDT_CHECKPOINT=1 时，才添加该标志
