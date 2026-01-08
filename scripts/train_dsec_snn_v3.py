@@ -29,9 +29,9 @@ from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
 
 #单event分支
-from dagr.model.networks.dagr_snn_v3 import DAGR
-#双分支双检测头
-#from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
+#from dagr.model.networks.dagr_snn_v3 import DAGR
+#自选单双三分支双检测头
+from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
 
 from dagr.model.networks.ema import ModelEMA
 
@@ -200,9 +200,9 @@ if __name__ == '__main__':
     print("init datasets")
     dataset_path = args.dataset_directory / args.dataset
 
-    forced_scale = 1  #设置为2，缩放分辨率，宽度和高度都缩小到原来的 1/2。提高训练速度和减小显存（用于快速验证）
+    forced_scale = 2  #设置为2，缩放分辨率，事件数据的宽度和高度都缩小到原来的 1/2（维持baseline）。
     print(f"\033[93mWARNING: Forcing data scale to {forced_scale} to fit in 24GB VRAM.\033[0m")
-    
+
     train_dataset = DSEC(root=dataset_path, split="train", transform=augmentations.transform_training, debug=False,
                          min_bbox_diag=15, min_bbox_height=10, scale=forced_scale)
     test_dataset = DSEC(root=dataset_path, split="val", transform=augmentations.transform_testing, debug=False,
