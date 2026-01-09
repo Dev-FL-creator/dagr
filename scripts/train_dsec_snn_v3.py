@@ -29,9 +29,9 @@ from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
 
 #单event分支
-#from dagr.model.networks.dagr_snn_v3 import DAGR
+from dagr.model.networks.dagr_snn_v3_1branch import DAGR
 #自选单双三分支双检测头
-from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
+#from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
 
 from dagr.model.networks.ema import ModelEMA
 
