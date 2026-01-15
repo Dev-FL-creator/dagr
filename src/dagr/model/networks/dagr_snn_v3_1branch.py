@@ -218,7 +218,7 @@ class HybridHeadV2(YOLOXHead):
 
 class DAGR(YOLOX):
     def __init__(self, args, height, width):
-        self.conf_threshold = 0.0001
+        self.conf_threshold = 0.001
         self.nms_threshold = 0.65
 
         self.height = height
