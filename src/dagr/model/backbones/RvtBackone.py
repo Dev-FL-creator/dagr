@@ -83,6 +83,62 @@ class MaxVitAttentionPairCl(nn.Module):
         x = self.att_grid(x)
         return x
 
+class RVTBlockWithLSTM(nn.Module):
+    """
+     RVT Block：Conv → Block-SA → MLP → LSTM
+    """
+    def __init__(self,
+                 dim,
+                 skip_first_norm,
+                 dim_head=32,
+                 partition_size=(7, 7),
+                 act_layer=nn.GELU,
+                 norm_layer=nn.LayerNorm,
+                 drop=0,
+                 drop_path=0,
+                 use_lstm=True):
+        super().__init__()
+        
+        # Block-SA + MLP（使用原有的 MaxVitAttentionPairCl）
+        self.attention_block = MaxVitAttentionPairCl(
+            dim=dim,
+            skip_first_norm=skip_first_norm,
+            dim_head=dim_head,
+            partition_size=partition_size,
+            act_layer=act_layer,
+            norm_layer=norm_layer,
+            drop=drop,
+            drop_path=drop_path,
+        )
+        
+        # LSTM
+        self.use_lstm = use_lstm
+        if use_lstm:
+            self.lstm = DWSConvLSTM2d(dim)
+    
+    def forward(self, x, h_and_c_previous=None):
+        """
+        Args:
+            x: (B, H, W, C) - channel-last format
+            h_and_c_previous: LSTM 的前一状态 (h, c) 或 None
+        Returns:
+            x: (B, H, W, C)
+            h_c: LSTM 状态 (h, c) 或 None
+        """
+        # Block-SA + MLP
+        x = self.attention_block(x)
+        
+        # LSTM
+        if self.use_lstm:
+            # 转换为 channel-first: (B, H, W, C) -> (B, C, H, W)
+            x_cf = x.permute(0, 3, 1, 2).contiguous()
+            h_t, c_t = self.lstm(x_cf, h_and_c_previous)
+            # 转换回 channel-last: (B, C, H, W) -> (B, H, W, C)
+            x = h_t.permute(0, 2, 3, 1).contiguous()
+            return x, (h_t, c_t)
+        else:
+            return x, None
+
 class PartitionAttentionCl(nn.Module):
     def __init__(
             self,
@@ -482,7 +538,7 @@ class RVTExtractor(nn.Module):
         )
         cur_dpr = 0
         self.stage2_blocks = nn.ModuleList([
-            MaxVitAttentionPairCl(
+            RVTBlockWithLSTM(
                 dim=embed_dim[1],
                 skip_first_norm=(i == 0),
                 dim_head=dim_head,
@@ -501,7 +557,7 @@ class RVTExtractor(nn.Module):
             overlap=True
         )
         self.stage3_blocks = nn.ModuleList([
-            MaxVitAttentionPairCl(
+            RVTBlockWithLSTM(
                 dim=embed_dim[2],
                 skip_first_norm=(i == 0),
                 dim_head=dim_head,
@@ -520,7 +576,7 @@ class RVTExtractor(nn.Module):
             overlap=True
         )
         self.stage4_blocks = nn.ModuleList([
-            MaxVitAttentionPairCl(
+            RVTBlockWithLSTM(
                 dim=embed_dim[3],
                 skip_first_norm=(i == 0),
                 dim_head=dim_head,
@@ -559,14 +615,7 @@ class RVTExtractor(nn.Module):
         self.use_image = False
         self.is_snn = False
         self.num_classes = getattr(args, "num_classes", getattr(args, "n_classes", 2))
-        
-        # LSTM for temporal modeling (optional)
-        self.use_lstm = getattr(args, "rvt_use_lstm", False)
-        if self.use_lstm:
-            self.lstm_stage2 = DWSConvLSTM2d(embed_dim[1])
-            self.lstm_stage3 = DWSConvLSTM2d(embed_dim[2])
-            self.lstm_stage4 = DWSConvLSTM2d(embed_dim[3])
-            self.lstm_states = {}
+        self.lstm_states = {}
         
         # Initialize weights
         if self.pretrained_weight:
@@ -655,43 +704,40 @@ class RVTExtractor(nn.Module):
         x = self._prepare_input(x)
         B = x.shape[0]
         
+        # Reset LSTM states if needed (LSTM 默认开启)
+        if reset:
+            self.lstm_states = {}
+        
         # Stage 1: Stem (B, C, H, W) -> (B, H/4, W/4, C1)
         x = self.stem(x)
         
-        # Stage 2: (B, H/8, W/8, C2)
+        # Stage 2: (B, H/8, W/8, C2) - 每个 block 内部有 LSTM
         x = self.downsample2(x)
-        for blk in self.stage2_blocks:
-            x = blk(x)
+        for i, blk in enumerate(self.stage2_blocks):
+            x, h_c = blk(x, self.lstm_states.get(f'stage2_block{i}', None))
+            if self.training and h_c is not None:
+                self.lstm_states[f'stage2_block{i}'] = (h_c[0].detach(), h_c[1].detach())
         
-        # Convert to channel-first for LSTM/output: (B, H, W, C) -> (B, C, H, W)
+        # 最终输出转换为 channel-first
         stage2 = x.permute(0, 3, 1, 2).contiguous()
         
-        if self.use_lstm and self.training:
-            h_c = self.lstm_states.get('stage2', None)
-            stage2, h_c = self.lstm_stage2(stage2, h_c)
-            self.lstm_states['stage2'] = (h_c[0].detach(), h_c[1].detach())
-        
-        # Stage 3: (B, H/16, W/16, C3)
+        # Stage 3: (B, H/16, W/16, C3) - 每个 block 内部有 LSTM
         x = self.downsample3(x)
-        for blk in self.stage3_blocks:
-            x = blk(x)
+        for i, blk in enumerate(self.stage3_blocks):
+            x, h_c = blk(x, self.lstm_states.get(f'stage3_block{i}', None))
+            if self.training and h_c is not None:
+                self.lstm_states[f'stage3_block{i}'] = (h_c[0].detach(), h_c[1].detach())
+        
         stage3 = x.permute(0, 3, 1, 2).contiguous()
         
-        if self.use_lstm and self.training:
-            h_c = self.lstm_states.get('stage3', None)
-            stage3, h_c = self.lstm_stage3(stage3, h_c)
-            self.lstm_states['stage3'] = (h_c[0].detach(), h_c[1].detach())
-        
-        # Stage 4: (B, H/32, W/32, C4)
+        # Stage 4: (B, H/32, W/32, C4) - 每个 block 内部有 LSTM
         x = self.downsample4(x)
-        for blk in self.stage4_blocks:
-            x = blk(x)
-        stage4 = x.permute(0, 3, 1, 2).contiguous()
+        for i, blk in enumerate(self.stage4_blocks):
+            x, h_c = blk(x, self.lstm_states.get(f'stage4_block{i}', None))
+            if self.training and h_c is not None:
+                self.lstm_states[f'stage4_block{i}'] = (h_c[0].detach(), h_c[1].detach())
         
-        if self.use_lstm and self.training:
-            h_c = self.lstm_states.get('stage4', None)
-            stage4, h_c = self.lstm_stage4(stage4, h_c)
-            self.lstm_states['stage4'] = (h_c[0].detach(), h_c[1].detach())
+        stage4 = x.permute(0, 3, 1, 2).contiguous()
         
         # Optional stage 5 (not returned, for feature extraction depth)
         if self.use_stage5:
