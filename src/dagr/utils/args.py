@@ -110,6 +110,10 @@ def BASE_FLAGS():
                         help="Enable LSTM temporal modeling in RVT")
     parser.add_argument("--rvt_return_temporal", action="store_true",
                         help="Return temporal features from RVT instead of pooling")
+    
+    # YOLOv13 head option
+    parser.add_argument("--use_yolov13_head", action="store_true",
+                        help="Use YOLOv13 head instead of YOLOX head...")
 
     return parser
 
