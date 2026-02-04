@@ -5,7 +5,7 @@ from dagr.model.networks.image_backbone import ImageBackbone
 from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
 from dagr.model.layers.fusion_2branch import SpikeCAFR
 from dagr.model.backbones.sdt_v3 import SpikformerV3Extractor
-from dagr.model.backbones.RvtBackone import RVTExtractor
+from dagr.model.backbones.RvtBackone_4_stage import RVTExtractor
 
 
 class HybridBackbone(nn.Module):

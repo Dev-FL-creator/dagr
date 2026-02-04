@@ -11,11 +11,10 @@ export NO_EVAL=${NO_EVAL:-0}
 # Python 与 启动命令
 PYTHON=python
 TORCHRUN=torchrun
-TRAIN_SCRIPT=scripts/train_dsec_rvt_2branch.py
+TRAIN_SCRIPT=scripts/train_dsec_rvt.py
 
-OUTPUT_DIR=/media/data/hucao/jinkai/dagr/logs_rvt_fusion
-EXP_NAME=fusion_event_image_rvt_bs2_2branch
-#EXP_NAME=fusion_event_image_rvt_bs8_test
+OUTPUT_DIR=/media/data/hucao/jinkai/dagr/logs_rvt_event
+EXP_NAME=event_only_rvt_bs8
 
 # ------------------------------------------------------------------------------
 # 模型配置切换区 (RVT Backbone 配置)
@@ -60,7 +59,7 @@ PRETRAINED_WEIGHT=""            # 留空表示不加载预训练权重
 # ------------------------------------------------------------------------------
 
 # 训练参数 (per-GPU)
-BATCH_SIZE=2
+BATCH_SIZE=8
 EPOCHS=801
 LR=0.0002
 WEIGHT_DECAY=0.00001
@@ -75,7 +74,7 @@ mkdir -p "$OUTPUT_DIR"
 LOG_FILE="${OUTPUT_DIR}/${EXP_NAME}_$(date +%Y%m%d_%H%M%S).log"
 
 echo "Training log will be saved to: $LOG_FILE"
-echo "Starting training with RVT backbone..."
+echo "Starting training with RVT backbone (single branch)..."
 echo "Mode: PRETRAINED_WEIGHT='${PRETRAINED_WEIGHT}'"
 echo "Dims: ${RVT_EMBED_DIMS}"
 echo "Depths: ${RVT_DEPTHS}"
@@ -105,8 +104,6 @@ COMMON_ARGS=(
   --rvt_dim_head "$RVT_DIM_HEAD"
   --rvt_partition_size $RVT_PARTITION_SIZE
   --dataset_directory "$DATASET_DIR"
-  --use_image
-  --img_net resnet50
   "${NO_EVAL_FLAG[@]}"
 )
 

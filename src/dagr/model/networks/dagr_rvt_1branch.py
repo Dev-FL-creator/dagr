@@ -11,7 +11,7 @@ try:
     from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
 except Exception:
     SNNBackboneYAMLWrapper = None
-from dagr.model.networks.hybrid_backbone_rvt_2branch import HybridBackbone
+
 from dagr.model.backbones.RvtBackone_4_stage import RVTExtractor
 from dagr.model.layers.spline_conv import SplineConvToDense
 from dagr.model.layers.conv import ConvBlock
@@ -30,40 +30,28 @@ class DAGR(YOLOX):
         use_event_backbone = hasattr(args, 'use_snn_backbone') and getattr(args, 'use_snn_backbone') and (use_rvt or SNNBackboneYAMLWrapper is not None)
         print(f"Debug: use_event_backbone: {use_event_backbone}, backbone_type: {getattr(args, 'backbone_type', 'default')}")
 
+
         use_image = hasattr(args, 'use_image') and getattr(args, 'use_image')
         print(f"Debug: use_image: {use_image}")
 
-        if use_event_backbone and getattr(args, 'use_image', False) and HybridBackbone is not None:
+        if use_event_backbone:
             if use_rvt:
-                print(f"Debug: running with 2-branch hybrid backbone (RVT + RGB)")
-            else:
-                print(f"Debug: running with 2-branch hybrid backbone (SNN + RGB)")
-            backbone = HybridBackbone(args, height=height, width=width)
-
-            if getattr(backbone, 'use_rvt', False):
-                in_channels_image = backbone.out_channels
-            else:
-                rgb_all_channels = backbone.rgb.feature_channels + backbone.rgb.output_channels
-                in_channels_image = rgb_all_channels
-
-            head = HybridHead(
-                num_classes=backbone.num_classes,
-                strides=backbone.strides,
-                in_channels=backbone.out_channels,
-                in_channels_image=in_channels_image,
-                args=args
-            )
-        elif use_event_backbone:
-            if use_rvt:
+                # 创建RVT backbone for single branch (event-only)
                 backbone = RVTExtractor(args, height=height, width=width, pretrained_weight=getattr(args, "load_pretrained_weight", None))
+                print("[DAGR] Using RVT backbone for single branch (event-only)")
             else:
                 yaml_path = getattr(args, 'snn_yaml_path', 'dagr/src/dagr/cfg/snn_yolov8.yaml')
                 scale = getattr(args, 'snn_scale', 's')
                 backbone = SNNBackboneYAMLWrapper(args, height=height, width=width, yaml_path=yaml_path, scale=scale)
+                
             head = YOLOXHead(num_classes=backbone.num_classes,
                              width=1.0,
                              strides=backbone.strides,
                              in_channels=backbone.out_channels)
+            
+            # --- Initialize biases for stability ---
+            head.initialize_biases(1e-2)
+            # -----------------------------------------------
         else:
             backbone = Net(args, height=height, width=width)
             head = GNNHead(num_classes=backbone.num_classes,
@@ -81,6 +69,7 @@ class DAGR(YOLOX):
             init_subnetwork(self, state_dict['ema'], "head.cnn_head.")
 
     def cache_luts(self, width, height, radius):
+        # LUTs are specific to graph-based spline convs; skip when using RVT backbone.
         if isinstance(self.backbone, Net):
             M = 2 * float(int(radius * width + 2) / width)
             r = int(radius * width+1)
@@ -125,14 +114,7 @@ class DAGR(YOLOX):
 
         if self.training:
             targets = convert_to_training_format(x.bbox, x.bbox_batch, x.num_graphs)
-
-            if self.backbone.use_image:
-                targets0 = convert_to_training_format(x.bbox0, x.bbox0_batch, x.num_graphs)
-                targets_tuple = (targets, targets0)
-                outputs = YOLOX.forward(self, x, targets_tuple)
-            else:
-                outputs = YOLOX.forward(self, x, targets)
-
+            outputs = YOLOX.forward(self, x, targets)
             return outputs
 
         x.reset = reset
@@ -171,104 +153,6 @@ class CNNHead(YOLOXHead):
             outputs["obj_output"].append(self.obj_preds[k](reg_feat))
 
         return outputs
-
-
-class HybridHead(YOLOXHead):
-    def __init__(self, num_classes, strides=[16, 32], in_channels=[256, 512], in_channels_image=None, act="silu", depthwise=False, args=None):
-        YOLOXHead.__init__(self, num_classes, 1.0, strides, in_channels, act, depthwise)
-        self.strides = strides
-        self.num_scales = len(in_channels)
-        
-        if in_channels_image is None:
-            in_channels_image = in_channels
-        self.image_head = CNNHead(num_classes=num_classes, width=1.0, strides=strides, in_channels=in_channels_image, act=act, depthwise=depthwise)
-
-    def _forward_single(self, xin):
-        outputs = dict(cls_output=[], reg_output=[], obj_output=[])
-        for k, (cls_conv, reg_conv, x) in enumerate(zip(self.cls_convs, self.reg_convs, xin)):
-            x = self.stems[k](x)
-            cls_x = x
-            reg_x = x
-            cls_feat = cls_conv(cls_x)
-            reg_feat = reg_conv(reg_x)
-            outputs["cls_output"].append(self.cls_preds[k](cls_feat))
-            outputs["reg_output"].append(self.reg_preds[k](reg_feat))
-            outputs["obj_output"].append(self.obj_preds[k](reg_feat))
-        return outputs
-    
-    def collect_outputs(self, cls_output, reg_output, obj_output, k, stride_this_level, ret=None):
-        if self.training:
-            output = torch.cat([reg_output, obj_output, cls_output], 1)
-            output, grid = self.get_output_and_grid(output, k, stride_this_level, output.type())
-            ret['x_shifts'].append(grid[:, :, 0])
-            ret['y_shifts'].append(grid[:, :, 1])
-            ret['expanded_strides'].append(
-                torch.zeros(1, grid.shape[1]).fill_(stride_this_level).type_as(output)
-            )
-        else:
-            output = torch.cat(
-                [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
-            )
-        
-        ret['outputs'].append(output)
-
-    def forward(self, xin, labels=None, imgs=None):
-        fused_feats, image_feats = xin
-
-        out_fused = self._forward_single(fused_feats)
-        out_image = self.image_head(image_feats)
-
-        if self.training:
-            fused_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
-            image_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
-
-            for k in range(self.num_scales):
-                self.collect_outputs(out_fused["cls_output"][k], out_fused["reg_output"][k], 
-                                   out_fused["obj_output"][k], k, self.strides[k], ret=fused_ret)
-                self.collect_outputs(out_image["cls_output"][k], out_image["reg_output"][k], 
-                                   out_image["obj_output"][k], k, self.strides[k], ret=image_ret)
-
-            if isinstance(labels, tuple) and len(labels) == 2:
-                labels_fused, labels_image = labels
-            else:
-                labels_fused, labels_image = labels, labels
-
-            losses_image = self.get_losses(
-                imgs,
-                image_ret['x_shifts'],
-                image_ret['y_shifts'],
-                image_ret['expanded_strides'],
-                labels_image,
-                torch.cat(image_ret['outputs'], 1),
-                [],
-                dtype=image_feats[0].dtype,
-            )
-
-            losses_fused = self.get_losses(
-                imgs,
-                fused_ret['x_shifts'],
-                fused_ret['y_shifts'],
-                fused_ret['expanded_strides'],
-                labels_fused,
-                torch.cat(fused_ret['outputs'], 1),
-                [],
-                dtype=fused_feats[0].dtype,
-            )
-
-            return tuple(l_img + l_fused for l_img, l_fused in zip(losses_image, losses_fused))
-
-        else:
-            fused_ret = dict(outputs=[])
-            for k in range(self.num_scales):
-                self.collect_outputs(out_fused["cls_output"][k], out_fused["reg_output"][k],
-                                   out_fused["obj_output"][k], k, self.strides[k], ret=fused_ret)
-
-            self.hw = [x.shape[-2:] for x in fused_ret['outputs']]
-            outputs = torch.cat(
-                [x.flatten(start_dim=2) for x in fused_ret['outputs']], dim=2
-            ).permute(0, 2, 1)
-
-            return self.decode_outputs(outputs, dtype=fused_feats[0].type())
 
 
 class GNNHead(YOLOXHead):
@@ -331,6 +215,7 @@ class GNNHead(YOLOXHead):
         cls_feat = cls_conv(shallow_copy(x))
         reg_feat = reg_conv(x)
 
+        # we need to provide the batchsize, since sometimes it cannot be foudn from the data, especially when nodes=0
         cls_output = cls_pred(cls_feat, batch_size=batch_size)
         reg_output = reg_pred(shallow_copy(reg_feat), batch_size=batch_size)
         obj_output = obj_pred(reg_feat, batch_size=batch_size)
@@ -338,6 +223,7 @@ class GNNHead(YOLOXHead):
         return cls_output, reg_output, obj_output
 
     def forward(self, xin: Data, labels=None, imgs=None):
+        # for events + image outputs
         hybrid_out = dict(outputs=[], origin_preds=[], x_shifts=[], y_shifts=[], expanded_strides=[])
         image_out = dict(outputs=[], origin_preds=[], x_shifts=[], y_shifts=[], expanded_strides=[])
 
@@ -348,9 +234,11 @@ class GNNHead(YOLOXHead):
                 if self.use_image:
                     labels, image_labels = labels
 
+            # resize image, and process with CNN
             image_feat = [torch.nn.functional.interpolate(f, o) for f, o in zip(image_feat, self.output_sizes)]
             out_cnn = self.cnn_head(image_feat)
 
+            # collect outputs from image alone, so the image network also learns to detect on its own.
             for k in [0, 1]:
                 self.collect_outputs(out_cnn["cls_output"][k],
                                      out_cnn["reg_output"][k],
@@ -381,6 +269,8 @@ class GNNHead(YOLOXHead):
             self.collect_outputs(cls_output, reg_output, obj_output, 1, self.strides[1], ret=hybrid_out)
 
         if self.training:
+            # if we are only training the image detectors (pretraining),
+            # we only need to minimize the loss at detections from the image branch.
             if self.use_image:
                 losses_image = self.get_losses(
                     imgs,
@@ -394,16 +284,16 @@ class GNNHead(YOLOXHead):
                 )
 
                 if not self.pretrain_cnn:
-                    losses_events = self.get_losses(
-                        imgs,
-                        hybrid_out['x_shifts'],
-                        hybrid_out['y_shifts'],
-                        hybrid_out['expanded_strides'],
-                        labels,
-                        torch.cat(hybrid_out['outputs'], 1),
-                        hybrid_out['origin_preds'],
-                        dtype=xin[0].x.dtype,
-                    )
+                    losses_events  = self.get_losses(
+                    imgs,
+                    hybrid_out['x_shifts'],
+                    hybrid_out['y_shifts'],
+                    hybrid_out['expanded_strides'],
+                    labels,
+                    torch.cat(hybrid_out['outputs'], 1),
+                    hybrid_out['origin_preds'],
+                    dtype=xin[0].x.dtype,
+                )
 
                     losses_image = list(losses_image)
                     losses_events = list(losses_events)
@@ -427,6 +317,7 @@ class GNNHead(YOLOXHead):
             out = image_out['outputs'] if self.no_events else hybrid_out['outputs']
 
             self.hw = [x.shape[-2:] for x in out]
+            # [batch, n_anchors_all, 85]
             outputs = torch.cat([x.flatten(start_dim=2) for x in out], dim=2).permute(0, 2, 1)
 
             return self.decode_outputs(outputs, dtype=out[0].type())
