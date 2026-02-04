@@ -12,7 +12,7 @@ try:
 except Exception:
     SNNBackboneYAMLWrapper = None
 from dagr.model.networks.hybrid_backbone_v3_2branch import HybridBackbone
-from dagr.model.backbones.sdt_v3 import SpikformerV3Extractor
+from dagr.model.backbones.sdt_v3_trilinear_mean import SpikformerV3Extractor
 from dagr.model.layers.spline_conv import SplineConvToDense
 from dagr.model.layers.conv import ConvBlock
 from dagr.model.utils import shallow_copy, init_subnetwork, voxel_size_to_params, postprocess_network_output, convert_to_evaluation_format, init_grid_and_stride, convert_to_training_format
