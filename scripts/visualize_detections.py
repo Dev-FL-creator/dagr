@@ -15,7 +15,7 @@ from dagr.visualization.event_viz import draw_events_on_image
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("""Visualization script to show bounding boxes""")
     parser.add_argument("--detections_folder", help="Path to folder with detections.", type=Path)
-    parser.add_argument("--dataset_directory", help="Path to DSEC folder including which split.", type=Path, default="/data/scratch1/daniel/datasets/DSEC_fragment/test")
+    parser.add_argument("--dataset_directory", help="Path to DSEC folder including which split.", type=Path, default="/media/data/hucao/zhenwu/hucao/DSEC/test")
     parser.add_argument("--vis_time_step_us", help="Number of microseconds to step each iteration.", type=int, default=1000)
     parser.add_argument("--event_time_window_us", help="Length of sliding event time window for visualization.", type=int, default=5000)
     parser.add_argument("--sequence", help="Sequence to visualize. Must be an official DSEC sequence e.g. zurich_city_13_b", default="zurich_city_13_b", type=str)
