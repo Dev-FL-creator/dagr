@@ -14,14 +14,14 @@ VIS_SCRIPT=scripts/visualize_detections.py
 DETECTIONS_FOLDER=/media/data/hucao/jinkai/dagr/logs_snn_fusion_v3/DSEC_Det/detection/fusion_event_image_sdtv3_bs4_2branch_enhance_interframe
 
 # DSEC dataset directory (test split)
-DATASET_DIR=/media/data/hucao/zhenwu/hucao/DSEC/test
+DATASET_DIR=/media/data/hucao/zhenwu/hucao/DSEC/DSEC_Det/test
 
 # Sequence to visualize (change as needed)
 SEQUENCE=zurich_city_13_b
 
 # Visualization parameters
 VIS_TIME_STEP_US=1000       # Time step between frames (microseconds)
-EVENT_TIME_WINDOW_US=5000   # Event time window for visualization (microseconds)
+EVENT_TIME_WINDOW_US=5000   # Length of sliding event time window for visualization
 
 # Output mode: set to true to save images, false for real-time display
 WRITE_TO_OUTPUT=true
