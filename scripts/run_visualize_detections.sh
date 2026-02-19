@@ -105,7 +105,7 @@ CMD_ARGS=(
 # Add write_to_output flag if enabled
 if [[ "$WRITE_TO_OUTPUT" == "true" ]]; then
     CMD_ARGS+=(--write_to_output)
-    OUTPUT_PATH="${DETECTIONS_FOLDER}/visualization"
+    OUTPUT_PATH="${DETECTIONS_FOLDER}/visualization_${SEQUENCE}"
     echo "Visualization images will be saved to: $OUTPUT_PATH"
 else
     echo "Real-time visualization mode (press any key in OpenCV window to advance frames)"
@@ -117,10 +117,10 @@ $PYTHON "$VIS_SCRIPT" "${CMD_ARGS[@]}"
 echo "================================================"
 if [[ "$WRITE_TO_OUTPUT" == "true" ]]; then
     echo "Visualization completed! Images saved to:"
-    echo "  ${DETECTIONS_FOLDER}/visualization/"
+    echo "  ${DETECTIONS_FOLDER}/visualization_${SEQUENCE}/"
     echo ""
     echo "You can create a video using:"
-    echo "  cd ${DETECTIONS_FOLDER}/visualization/"
+    echo "  cd ${DETECTIONS_FOLDER}/visualization_${SEQUENCE}/"
     echo "  ffmpeg -framerate 1000 -i %06d.png -c:v mpeg4 -pix_fmt yuv420p ${SEQUENCE}_visualization.mp4"
 else
     echo "Visualization completed!"

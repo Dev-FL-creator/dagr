@@ -55,7 +55,7 @@ if __name__ == '__main__':
     if args.write_to_output:
         assert (args.detections_folder / f"detections_{args.sequence}.npy").exists()
         assert args.detections_folder.exists()
-        output_path = args.detections_folder / "visualization"
+        output_path = args.detections_folder / f"visualization_{args.sequence}"
         output_path.mkdir(parents=True, exist_ok=True)
 
     dsec_directory = DSECDirectory(args.dataset_directory / args.sequence)
