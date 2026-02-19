@@ -121,7 +121,7 @@ if [[ "$WRITE_TO_OUTPUT" == "true" ]]; then
     echo ""
     echo "You can create a video using:"
     echo "  cd ${DETECTIONS_FOLDER}/visualization/"
-    echo "  ffmpeg -framerate 10 -i %06d.png -c:v mpeg4 -pix_fmt yuv420p ${SEQUENCE}_visualization.mp4"
+    echo "  ffmpeg -framerate 1000 -i %06d.png -c:v mpeg4 -pix_fmt yuv420p ${SEQUENCE}_visualization.mp4"
 else
     echo "Visualization completed!"
 fi
