@@ -40,23 +40,23 @@ def generate_start_end_time_yaml(sequence_path):
                 print(f"  {name}: {type(obj).__name__}")
             f.visititems(print_structure)
             
-            # Try to read timestamps
+            # Try to read timestamps and offset
             if 'events' in f and 't' in f['events']:
                 try:
                     timestamps = f['events']['t']
-                    start_time = int(timestamps[0])
-                    end_time = int(timestamps[-1])
+                    t_offset = f['t_offset'][()] if 't_offset' in f else 0
+                    
+                    # Get actual timestamp range with offset
+                    start_time = int(timestamps[0] + t_offset)
+                    end_time = int(timestamps[-1] + t_offset)
+                    
                     print(f"Successfully read timestamps from events/t")
+                    print(f"T_offset: {t_offset}")
+                    print(f"Raw timestamps range: {timestamps[0]} to {timestamps[-1]}")
+                    print(f"Adjusted timestamps range: {start_time} to {end_time}")
                 except Exception as e:
                     print(f"Could not read timestamps: {e}")
                     raise
-            elif 't_offset' in f:
-                # Use t_offset if available
-                t_offset = f['t_offset'][()]
-                # Create reasonable time range based on offset
-                start_time = int(t_offset)
-                end_time = int(t_offset + 60000000)  # 60 seconds duration
-                print(f"Using t_offset: {t_offset}")
             else:
                 raise ValueError("No suitable timestamp data found")
                 
