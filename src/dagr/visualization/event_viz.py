@@ -31,34 +31,46 @@ def draw_events_on_image(img, x, y, p, alpha=0.5):
             w10 = dx * (1 - dy)
             w11 = dx * dy
             
-            # Get polarity channel
-            p_idx = int(p[i]) - 1
-            if 0 <= p_idx < img.shape[2]:
+            # 极性处理 - 正确映射事件极性到颜色通道
+            polarity = int(p[i])
+            if polarity == 1:  # 正极性事件（变亮）- 蓝色 (BGR格式中的通道0)
+                channel = 0
+            else:  # 负极性事件（变暗，polarity == 0）- 红色 (BGR格式中的通道2)
+                channel = 2
+                
+            if 0 <= channel < img.shape[2]:
                 # Apply color to all four neighboring pixels with weights
                 event_color = 255 * (1 - alpha)
                 
                 # Update pixels with precise weights
                 img[y0, x0, :] = alpha * img_copy[y0, x0, :]
-                img[y0, x0, p_idx] += event_color * w00
+                img[y0, x0, channel] += event_color * w00
                 
                 img[y0, x1, :] = alpha * img_copy[y0, x1, :]
-                img[y0, x1, p_idx] += event_color * w10
+                img[y0, x1, channel] += event_color * w10
                 
                 img[y1, x0, :] = alpha * img_copy[y1, x0, :]
-                img[y1, x0, p_idx] += event_color * w01
+                img[y1, x0, channel] += event_color * w01
                 
                 img[y1, x1, :] = alpha * img_copy[y1, x1, :]
-                img[y1, x1, p_idx] += event_color * w11
+                img[y1, x1, channel] += event_color * w11
         
         # Fallback for edge cases - use nearest pixel
         elif 0 <= x_coord < img.shape[1] and 0 <= y_coord < img.shape[0]:
             x_nearest = int(round(x_coord))
             y_nearest = int(round(y_coord))
-            p_idx = int(p[i]) - 1
+            
+            # 极性处理
+            polarity = int(p[i])
+            if polarity == 1:  # 正极性事件（变亮）- 蓝色
+                channel = 0
+            else:  # 负极性事件（变暗）- 红色
+                channel = 2
             
             if (0 <= x_nearest < img.shape[1] and 0 <= y_nearest < img.shape[0] and
-                0 <= p_idx < img.shape[2]):
+                0 <= channel < img.shape[2]):
                 img[y_nearest, x_nearest, :] = alpha * img_copy[y_nearest, x_nearest, :]
-                img[y_nearest, x_nearest, p_idx] += 255 * (1 - alpha)
+                img[y_nearest, x_nearest, channel] += 255 * (1 - alpha)
     
-    return img.astype(np.uint8)
+    # 确保像素值在有效范围内
+    return np.clip(img, 0, 255).astype(np.uint8)
