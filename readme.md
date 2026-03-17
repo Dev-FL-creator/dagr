@@ -1,27 +1,3 @@
-# Low Latency Automotive Vision with Event Cameras
-
-<p align="center">
-<a href="https://youtu.be/dwzGhMQCc4Y">
-  <img src="assets/Nature_Gehrig_YouTube_cover_yt.jpg" alt="DAGR" width="500"/>
-</a>
-</p>
-
-This repository contains code from our 2024 Nature paper which can be accessed for free here [PDF Open Access](https://www.nature.com/articles/s41586-024-07409-w).
-**_Low Latency Automotive Vision with Event Cameras_** by [Daniel Gehrig](https://danielgehrig18.github.io/) and [Davide Scaramuzza](http://rpg.ifi.uzh.ch/people_scaramuzza.html). 
-If you use our code or refer to this project, please cite it using
-
-```bibtex
-@Article{Gehrig24nature,
-  author    = {Gehrig, Daniel and Scaramuzza, Davide},
-  title     = {Low Latency Automotive Vision with Event Cameras},
-  booktitle = {Nature},
-  year      = {2024}
-}
-```
-
-## Updates 
-* Training code for N-Caltech101 and DSEC-DET have been open sourced. To train your model jump to the [training section](#training)
-
 ## Installation
 First, download the github repository and its dependencies
 ```bash
