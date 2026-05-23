@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 from dagr.model.networks.image_backbone import ImageBackbone
-from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
 from dagr.model.layers.fusion_2branch import SpikeCAFR
 from dagr.model.backbones.sdt_v3_trilinear_mean import SpikformerV3Extractor
 
@@ -29,14 +28,6 @@ class HybridBackbone(nn.Module):
             evt_channels = list(self.snn.out_channels)
             rgb_fuse_channels = [c3_ch, c4_ch, c5_ch]
             self.strides = [8, 16, 32]
-            self.out_channels = rgb_fuse_channels
-        else:
-            yaml_path = getattr(args, 'snn_yaml_path', 'dagr/src/dagr/cfg/snn_yolov8.yaml')
-            scale = getattr(args, 'snn_scale', 's')
-            self.snn = SNNBackboneYAMLWrapper(args, height=height, width=width, yaml_path=yaml_path, scale=scale)
-            evt_channels = list(getattr(self.snn, "out_channels", [64, 128, 256, 512]))
-            rgb_fuse_channels = [c2_ch, c3_ch, c4_ch, c5_ch]
-            self.strides = [4, 8, 16, 32]
             self.out_channels = rgb_fuse_channels
 
         self.fuse_modules = nn.ModuleList()

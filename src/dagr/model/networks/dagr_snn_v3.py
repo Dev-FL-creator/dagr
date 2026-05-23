@@ -6,10 +6,6 @@ from yolox.models import YOLOX, YOLOXHead, IOUloss
 
 from dagr.model.networks.net import Net
 try:
-    from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
-except Exception:
-    SNNBackboneYAMLWrapper = None
-try:
     from dagr.model.backbones.sdt_v3 import SpikformerV3Extractor
 except Exception:
     SpikformerV3Extractor = None
@@ -33,10 +29,6 @@ class DAGR(YOLOX):
                 width=width, 
                 pretrained_weight=getattr(args, "load_pretrained_weight", None)
             )
-        elif use_snn and SNNBackboneYAMLWrapper is not None:
-            yaml_path = getattr(args, 'snn_yaml_path', 'dagr/src/dagr/cfg/snn_yolov8.yaml')
-            scale = getattr(args, 'snn_scale', 's')
-            backbone = SNNBackboneYAMLWrapper(args, height=height, width=width, yaml_path=yaml_path, scale=scale)
         else:
             raise ValueError("Event-only mode requires use_snn_backbone=True and valid backbone_type")
 

@@ -7,10 +7,6 @@ from torch_geometric.data import Data
 from yolox.models import YOLOX, YOLOXHead, IOUloss
 from dagr.model.networks.enhancer import BranchEnhancer
 from dagr.model.networks.net import Net
-try:
-    from dagr.model.networks.snn_backbone_yaml import SNNBackboneYAMLWrapper
-except Exception:
-    SNNBackboneYAMLWrapper = None
 from dagr.model.networks.hybrid_backbone_v3_2branch import HybridBackbone
 from dagr.model.backbones.sdt_v3_trilinear_mean import SpikformerV3Extractor
 from dagr.model.layers.spline_conv import SplineConvToDense
@@ -27,7 +23,7 @@ class DAGR(YOLOX):
         self.width = width
 
         use_sdt = str(getattr(args, 'backbone_type', '')).lower() == 'sdtv3'
-        use_snn = hasattr(args, 'use_snn_backbone') and getattr(args, 'use_snn_backbone') and (use_sdt or SNNBackboneYAMLWrapper is not None)
+        use_snn = hasattr(args, 'use_snn_backbone') and getattr(args, 'use_snn_backbone') and (use_sdt is not None)
         print(f"Debug: use_snn: {use_snn}")
 
         use_image = hasattr(args, 'use_image') and getattr(args, 'use_image')
@@ -53,10 +49,6 @@ class DAGR(YOLOX):
         elif use_snn:
             if use_sdt:
                 backbone = SpikformerV3Extractor(args, height=height, width=width, pretrained_weight=getattr(args, "load_pretrained_weight", None))
-            else:
-                yaml_path = getattr(args, 'snn_yaml_path', 'dagr/src/dagr/cfg/snn_yolov8.yaml')
-                scale = getattr(args, 'snn_scale', 's')
-                backbone = SNNBackboneYAMLWrapper(args, height=height, width=width, yaml_path=yaml_path, scale=scale)
             head = YOLOXHead(num_classes=backbone.num_classes,
                              width=1.0,
                              strides=backbone.strides,
