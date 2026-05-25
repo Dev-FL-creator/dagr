@@ -94,27 +94,6 @@ def BASE_FLAGS():
     parser.add_argument('--sdt_temporal_pool', type=str, default='attention',
                     choices=['mean', 'last', 'max', 'attention', 'conv', 'learned_weights'],
                     help='Temporal pooling mode for SNN output')
-
-    # RVT (Recurrent Vision Transformer) backbone options
-    parser.add_argument("--rvt_in_channels", type=int, default=argparse.SUPPRESS,
-                        help="Input channels for RVT (2 for events, 3 for RGB)")
-    parser.add_argument("--rvt_embed_dim", nargs="+", type=int, default=argparse.SUPPRESS,
-                        help="Embedding dims list for RVT (len>=4, e.g., 64 128 256 512)")
-    parser.add_argument("--rvt_depths", nargs="+", type=int, default=argparse.SUPPRESS,
-                        help="Depths (number of blocks) for each stage of RVT (e.g., 2 2 6 2)")
-    parser.add_argument("--rvt_dim_head", type=int, default=argparse.SUPPRESS,
-                        help="Attention head dimension for RVT (default: 32)")
-    parser.add_argument("--rvt_partition_size", nargs="+", type=int, default=argparse.SUPPRESS,
-                        help="Window/grid partition size for RVT (e.g., 7 7)")
-    parser.add_argument("--rvt_use_lstm", action="store_true",
-                        help="Enable LSTM temporal modeling in RVT")
-    parser.add_argument("--rvt_return_temporal", action="store_true",
-                        help="Return temporal features from RVT instead of pooling")
-    
-    # YOLOv13 head option
-    parser.add_argument("--use_yolov13_head", action="store_true",
-                        help="Use YOLOv13 head instead of YOLOX head...")
-
     return parser
 
 def FLAGS():
