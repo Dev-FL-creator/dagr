@@ -1,4 +1,3 @@
-# #论文图中的Spikformer V3骨干网络，Channel MLP的linear换成Conv1d，数学上等价, 用纯广播操作实现线性注意力的 forward 和 backward，完全绕过 CUBLAS 双分支无cublas报错
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
