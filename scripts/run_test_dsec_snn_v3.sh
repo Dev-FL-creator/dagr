@@ -46,9 +46,6 @@ SDT_DEPTHS="2 2 6 2"
 SDT_NUM_HEADS=8
 SDT_SR_RATIO=4
 
-# Temporal pooling method (must match training)
-SDT_TEMPORAL_POOL=attention   # options: mean, last, max, attention, conv, concat_conv, learned_weights
-
 # ------------------------------------------------------------------------------
 # Test Configuration
 # ------------------------------------------------------------------------------
@@ -78,7 +75,6 @@ echo "Log file: $LOG_FILE"
 echo "Checkpoint: $CHECKPOINT"
 echo "Backbone: $BACKBONE_TYPE"
 echo "Dims: ${SDT_EMBED_DIMS}"
-echo "Temporal Pool: ${SDT_TEMPORAL_POOL}"
 echo "================================================"
 
 # Check if checkpoint exists
@@ -107,7 +103,6 @@ CMD_ARGS=(
   --sdt_mlp_ratio "$SDT_MLP_RATIO"
   --sdt_norm "$SDT_NORM"
   --sdt_sr_ratio "$SDT_SR_RATIO"
-  --sdt_temporal_pool "$SDT_TEMPORAL_POOL"
   --dataset_directory "$DATASET_DIR"
   --checkpoint "$CHECKPOINT"
 )

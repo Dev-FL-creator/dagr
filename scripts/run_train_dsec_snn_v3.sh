@@ -46,7 +46,6 @@ SDT_DEPTHS="2 2 6 2"
 SDT_NUM_HEADS=8
 SDT_SR_RATIO=4                  # 保持 4 以获得较好的表征能力
 
-SDT_TEMPORAL_POOL=attention   # 可选: mean, last, max, attention, conv, concat_conv, learned_weights
 
 # ------------------------------------------------------------------------------
 # 3. 训练超参数与数据集

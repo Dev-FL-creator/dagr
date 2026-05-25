@@ -63,9 +63,6 @@ def BASE_FLAGS():
 
     # SNN backbone options
     parser.add_argument("--use_snn_backbone", action="store_true", help="Enable SNN backbone defined by a YAML config")
-    parser.add_argument("--snn_yaml_path", default=argparse.SUPPRESS, type=str, help="Path to SNN YAML config file")
-    parser.add_argument("--snn_scale", default=argparse.SUPPRESS, type=str, help="Model scale for SNN backbone (e.g., s/m/l)")
-    parser.add_argument("--snn_temporal_bins", type=int, default=4, help="Temporal bins T for SNN voxelization (default: 4)")
     parser.add_argument("--backbone_type", default=argparse.SUPPRESS, type=str,
                         help="Backbone selector: set to 'sdtv3' to use Spike-Driven Transformer V3")
     parser.add_argument("--sdt_T", type=int, default=argparse.SUPPRESS, help="Time steps for SDT-V3 (default: 4)")
@@ -91,9 +88,6 @@ def BASE_FLAGS():
                         help="Spatial-Reduction ratio / Value expansion ratio for SDT-V3 attention (default: 1). Checkpoints often use 4.")
     parser.add_argument("--load_pretrained_weight", default=None, type=str,
                         help="Path to pretrained .pth weights for SDT-V3 backbone (classification head will be skipped)")
-    parser.add_argument('--sdt_temporal_pool', type=str, default='attention',
-                    choices=['mean', 'last', 'max', 'attention', 'conv', 'learned_weights'],
-                    help='Temporal pooling mode for SNN output')
     return parser
 
 def FLAGS():
