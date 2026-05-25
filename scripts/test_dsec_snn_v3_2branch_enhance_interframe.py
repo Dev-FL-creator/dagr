@@ -131,10 +131,6 @@ if __name__ == '__main__':
             print(f"Loading failed completely: {e2}")
             exit(1)
     
-    # Cache LUTs if needed (for some model types)
-    if hasattr(ema.ema, 'cache_luts'):
-        ema.ema.cache_luts(radius=getattr(args, 'radius', 2), height=test_dataset.height, width=test_dataset.width)
-    
     print("starting interframe testing...")
     
     detections = []

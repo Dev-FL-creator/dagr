@@ -76,7 +76,6 @@ if __name__ == '__main__':
     assert "checkpoint" in args
     checkpoint = torch.load(args.checkpoint)
     ema.ema.load_state_dict(checkpoint['ema'])
-    ema.ema.cache_luts(radius=args.radius, height=test_dataset.height, width=test_dataset.width)
 
     detections = []
     with torch.no_grad():

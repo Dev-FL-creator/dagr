@@ -88,18 +88,6 @@ CUDA_VISIBLE_DEVICES=$DEVICE python scripts/run_test.py --config config/dagr-s-d
                                                         --dataset_directory $DSEC_ROOT \
                                                         --output_directory $LOG_DIR
 ```
-Then, to evaluate the number of FLOPS generated in asynchronous mode, run 
-```bash 
-LOG_DIR=/path/to/log
-DEVICE=1
-CUDA_VISIBLE_DEVICES=$DEVICE python scripts/count_flops.py --config config/eagr-s-dsec.yaml \
-                                                           --use_image \
-                                                           --img_net resnet50 \
-                                                           --checkpoint data/dagr_s_50.pth \
-                                                           --batch_size 8 \
-                                                           --dataset_directory $DSEC_ROOT \
-                                                           --output_directory $LOG_DIR
-```
 Finally, to evaluate the interframe detection performance of our method run
 ```bash
 LOG_DIR=/path/to/log
