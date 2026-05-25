@@ -17,7 +17,7 @@ from torch.utils.data import Subset
 from dagr.utils.args import FLAGS
 from dagr.data.dsec_data import DSEC
 from dagr.data.augment import Augmentations
-from dagr.model.networks.dagr_fusion_seperate_heads_v3 import DAGR
+from dagr.model.networks.dagr_snn_v3_1branch import DAGR
 from dagr.model.networks.ema import ModelEMA
 from dagr.utils.logging import set_up_logging_directory, log_hparams
 from dagr.utils.buffers import DetectionBuffer, format_data

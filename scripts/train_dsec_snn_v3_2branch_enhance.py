@@ -28,8 +28,6 @@ from dagr.data.augment import Augmentations
 from dagr.utils.buffers import format_data
 from dagr.data.dsec_data import DSEC
 
-#单event分支
-#from dagr.model.networks.dagr_snn_v3 import DAGR
 #双分支双检测头
 from dagr.model.networks.dagr_fusion_seperate_heads_v3_2branch_enhance import DAGR
 

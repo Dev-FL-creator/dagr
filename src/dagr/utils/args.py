@@ -12,19 +12,12 @@ def BASE_FLAGS():
     #parser.add_argument('--resume_checkpoint', type=Path, help='Path to checkpoint file for resuming training')
     parser.add_argument("--img_net", default=argparse.SUPPRESS, type=str)
     parser.add_argument("--img_net_checkpoint", type=Path, default=argparse.SUPPRESS)
-    # --- Modified for 3-branch hybrid backbone (Fused, RGB, MAD) ---
-    parser.add_argument("--mad_flow_checkpoint", type=Path, default=argparse.SUPPRESS,
-                        help="Path to the pre-trained EVFlowNet checkpoint for the MAD branch.")
-    parser.add_argument("--no_load_mad_flow", action="store_true",
-                        help="Do not load a pre-trained EVFlowNet checkpoint; use random weights instead for debugging.")
     parser.add_argument("--use_checkpointing", action="store_true",
                         help="Use activation checkpointing to save VRAM at the cost of computation.")
     # --- Modified end ---
 
     parser.add_argument("--config", type=Path, default="../config/detection.yaml")
     parser.add_argument("--use_image", action="store_true")
-    parser.add_argument("--no_mad", action="store_true",
-                        help="Disable MAD branch when using --use_image. Only use two branches (sdtv3/snn + image) instead of three.")
     parser.add_argument("--no_events", action="store_true")
     parser.add_argument("--pretrain_cnn", action="store_true")
     parser.add_argument("--keep_temporal_ordering", action="store_true")
@@ -122,11 +115,6 @@ def FLAGS():
     if "checkpoint" in args:
         args.checkpoint = Path(args.checkpoint)
     
-    # --- Modified for 3-branch hybrid backbone (Fused, RGB, MAD) ---
-    if hasattr(args, 'mad_flow_checkpoint') and args.mad_flow_checkpoint is not None:
-        args.mad_flow_checkpoint = Path(args.mad_flow_checkpoint)
-    # --- Modified end ---
-
     return args
 
 def FLOPS_FLAGS():
@@ -147,11 +135,6 @@ def FLOPS_FLAGS():
 
     if "checkpoint" in args:
         args.checkpoint = Path(args.checkpoint)
-
-    # --- Modified for 3-branch hybrid backbone (Fused, RGB, MAD) ---
-    if hasattr(args, 'mad_flow_checkpoint') and args.mad_flow_checkpoint is not None:
-        args.mad_flow_checkpoint = Path(args.mad_flow_checkpoint)
-    # --- Modified end ---
 
     return args
 

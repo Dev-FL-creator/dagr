@@ -7,210 +7,12 @@ from torch_geometric.data import Data
 from yolox.models import YOLOX, YOLOXHead, IOUloss
 
 from dagr.model.networks.net import Net
-# try:
-#     from dagr.model.networks.hybrid_backbone import HybridBackbone
-# except Exception:
-#     HybridBackbone = None
 from dagr.model.networks.hybrid_backbone_v3 import HybridBackbone
 from dagr.model.backbones.sdt_v3 import SpikformerV3Extractor
 from dagr.model.layers.spline_conv import SplineConvToDense
 from dagr.model.layers.conv import ConvBlock
 from dagr.model.utils import shallow_copy, init_subnetwork, voxel_size_to_params, postprocess_network_output, convert_to_evaluation_format, init_grid_and_stride, convert_to_training_format
 
-# --- HybridHeadV2 (用于三分支训练, 实现 logits 相加, 并支持 checkpointing) ---
-class HybridHeadV2(YOLOXHead):
-    def __init__(self, num_classes, strides, 
-                 in_channels_fused, 
-                 in_channels_image, 
-                 in_channels_mad, 
-                 act="silu", depthwise=False, width=1.0, args=None):
-        
-        # 使用 in_channels_fused 初始化基类 YOLOXHead
-        super().__init__(num_classes, width=1.0, strides=strides, in_channels=in_channels_fused, act=act, depthwise=depthwise)
-        
-        self.strides = strides
-        self.num_scales = len(in_channels_fused)
-
-        # 1. Fused Head (用于推理和训练)
-        self.fused_head = YOLOXHead(num_classes, width=1.0, strides=strides, in_channels=in_channels_fused, act=act, depthwise=depthwise)
-        
-        
-        self.image_head = YOLOXHead(num_classes, width=1.0, strides=strides, in_channels=in_channels_image, act=act, depthwise=depthwise)
-        
-        # 2. MAD Head (仅在 in_channels_mad 不为 None 时创建)
-        self.use_mad = in_channels_mad is not None
-        if self.use_mad:
-            self.mad_head = YOLOXHead(num_classes, width=1.0, strides=strides, in_channels=in_channels_mad, act=act, depthwise=depthwise)
-        else:
-            self.mad_head = None
-
-        # --- 集成 Checkpointing 标志 ---
-        self.use_checkpointing = getattr(args, 'use_checkpointing', False) if args else False
-        
-        # 确保所有 head 的 use_l1 设置一致 (默认为 False)
-        self.use_l1 = False 
-        self.fused_head.use_l1 = False
-        self.image_head.use_l1 = False
-        if self.mad_head is not None:
-            self.mad_head.use_l1 = False
-
-    def _get_raw_outputs(self, head_instance, xin_list):
-        """
-        运行一个 YOLOXHead 实例的 stem 和 convs 来获取原始 logits。
-        (此函数本身保持不变)
-        """
-        cls_outputs, reg_outputs, obj_outputs = [], [], []
-        num_scales_for_head = len(head_instance.stems)
-        
-        for k in range(num_scales_for_head):
-            if k >= len(xin_list):
-                continue
-                
-            x = head_instance.stems[k](xin_list[k])
-            cls_feat = head_instance.cls_convs[k](x)
-            reg_feat = head_instance.reg_convs[k](x)
-            
-            cls_outputs.append(head_instance.cls_preds[k](cls_feat))
-            reg_outputs.append(head_instance.reg_preds[k](reg_feat))
-            obj_outputs.append(head_instance.obj_preds[k](reg_feat))
-            
-        return cls_outputs, reg_outputs, obj_outputs
-
-    def forward(self, xin, labels=None, imgs=None):
-        fused_feats, image_feats, mad_feats = xin
-
-        # 1. 从所有三个 head 获取原始 [B,C,H,W] logits
-        
-        # --- 应用 Checkpointing ---
-        if self.training and self.use_checkpointing:
-            # 1. Get Fused logits (with checkpointing)
-            #
-            fused_cls, fused_reg, fused_obj = activation_checkpoint(
-                self._get_raw_outputs, self.fused_head, fused_feats, use_reentrant=False
-            )
-            
-            # 2. Get Image logits (with checkpointing)
-            image_cls, image_reg, image_obj = activation_checkpoint(
-                self._get_raw_outputs, self.image_head, image_feats, use_reentrant=False
-            )
-            
-            # 3. Get MAD logits (with checkpointing, if available and enabled)
-            if self.use_mad and mad_feats is not None and self.mad_head is not None:
-                mad_cls, mad_reg, mad_obj = activation_checkpoint(
-                    self._get_raw_outputs, self.mad_head, mad_feats, use_reentrant=False
-                )
-            else:
-                mad_cls = [torch.zeros_like(f) for f in fused_cls]
-                mad_reg = [torch.zeros_like(f) for f in fused_reg]
-                mad_obj = [torch.zeros_like(f) for f in fused_obj]
-                
-        else: # (非训练状态 或 未开启 checkpointing)
-            # 1. Get Fused logits
-            fused_cls, fused_reg, fused_obj = self._get_raw_outputs(self.fused_head, fused_feats)
-            
-            # 2. Get Image logits
-            image_cls, image_reg, image_obj = self._get_raw_outputs(self.image_head, image_feats)
-
-            # 3. Get MAD logits (仅在训练时获取，且 MAD 分支启用时)
-            if self.use_mad and self.training and mad_feats is not None and self.mad_head is not None:
-                mad_cls, mad_reg, mad_obj = self._get_raw_outputs(self.mad_head, mad_feats)
-            else:
-                # 推理时、MAD 分支禁用或 MAD 分支失败时，创建零张量
-                mad_cls = [torch.zeros_like(f) for f in fused_cls]
-                mad_reg = [torch.zeros_like(f) for f in fused_reg]
-                mad_obj = [torch.zeros_like(f) for f in fused_obj]
-        # --- Checkpointing 结束 ---
-
-        # 2. 将 logits 相加
-        # 模仿 GNNHead 的逻辑
-        final_cls_outputs, final_reg_outputs, final_obj_outputs = [], [], []
-        for k in range(self.num_scales):
-            # MAD 分支只在训练时且启用时参与相加
-            if self.training and self.use_mad:
-                final_cls_outputs.append(fused_cls[k] + image_cls[k].detach() + mad_cls[k].detach())
-                final_reg_outputs.append(fused_reg[k] + image_reg[k].detach() + mad_reg[k].detach())
-                final_obj_outputs.append(fused_obj[k] + image_obj[k].detach() + mad_obj[k].detach())
-            else:
-                # 推理时或 MAD 禁用时：只融合 Fused 和 Image
-                final_cls_outputs.append(fused_cls[k] + image_cls[k].detach())
-                final_reg_outputs.append(fused_reg[k] + image_reg[k].detach())
-                final_obj_outputs.append(fused_obj[k] + image_obj[k].detach())
-
-
-        # 3. 复制 YOLOXHead.forward 的标准逻辑
-        
-        outputs = []
-        origin_preds = []
-        x_shifts = []
-        y_shifts = []
-        expanded_strides = []
-
-        for k in range(self.num_scales):
-            cls_output = final_cls_outputs[k]
-            reg_output = final_reg_outputs[k]
-            obj_output = final_obj_outputs[k]
-            stride_this_level = self.strides[k]
-            
-            if self.training:
-                #
-                output = torch.cat([reg_output, obj_output, cls_output], 1)
-                output, grid = self.get_output_and_grid(
-                    output, k, stride_this_level, fused_feats[0].type()
-                )
-                x_shifts.append(grid[:, :, 0])
-                y_shifts.append(grid[:, :, 1])
-                expanded_strides.append(
-                    torch.zeros(1, grid.shape[1])
-                    .fill_(stride_this_level)
-                    .type_as(fused_feats[0])
-                )
-                if self.use_l1:
-                    batch_size = reg_output.shape[0]
-                    hsize, wsize = reg_output.shape[-2:]
-                    reg_output_l1 = reg_output.view(
-                        batch_size, 1, 4, hsize, wsize
-                    )
-                    reg_output_l1 = reg_output_l1.permute(0, 1, 3, 4, 2).reshape(
-                        batch_size, -1, 4
-                    )
-                    origin_preds.append(reg_output_l1.clone())
-            else:
-                #
-                output = torch.cat(
-                    [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
-                )
-            
-            outputs.append(output)
-
-        # 4. 返回损失（训练时）或解码后的输出（推理时）
-        if self.training:
-            # labels 是一个元组 (targets, targets0, targets)
-            # 我们只使用第一个 (fused) 标签作为相加后 logits 的真值
-            labels_fused, _, _ = labels 
-            
-            #
-            return self.get_losses(
-                imgs,
-                x_shifts,
-                y_shifts,
-                expanded_strides,
-                labels_fused, # 仅使用一组标签
-                torch.cat(outputs, 1),
-                origin_preds,
-                dtype=fused_feats[0].dtype,
-            )
-        else: # 推理
-            #
-            self.hw = [x.shape[-2:] for x in outputs]
-            outputs = torch.cat(
-                [x.flatten(start_dim=2) for x in outputs], dim=2
-            ).permute(0, 2, 1)
-            
-            if self.decode_in_inference:
-                return self.decode_outputs(outputs, dtype=fused_feats[0].type())
-            else:
-                return outputs
-# --- HybridHeadV2 结束 ---
 
 class DAGR(YOLOX):
     def __init__(self, args, height, width):
@@ -227,63 +29,41 @@ class DAGR(YOLOX):
         use_image = hasattr(args, 'use_image') and getattr(args, 'use_image')
         print(f"Debug: use_image: {use_image}")
 
-        use_mad = not getattr(args, 'no_mad', False)
-        if use_image and not use_mad:
-            print(f"Debug: --no_mad is set. MAD branch will be disabled.")
-
         if use_snn and getattr(args, 'use_image', False) and HybridBackbone is not None:
-
-            if use_mad:
-                print(f"Debug: running with 3-branch hybrid backbone (Fused, RGB, MAD)")
-            else:
-                print(f"Debug: running with 2-branch hybrid backbone (Fused, RGB) - MAD disabled")
+            print(f"Debug: running with 2-branch hybrid backbone (Fused, RGB)")
             backbone = HybridBackbone(args, height=height, width=width)
 
-            # Align channel lists with the active backbone (SNN vs SDT-V3)
             if getattr(backbone, 'use_sdt_v3', False):
-                in_channels_image = backbone.out_channels  # [c3, c4, c5]
-                if use_mad and hasattr(backbone, 'mad_backbone') and backbone.mad_backbone is not None:
-                    in_channels_mad = list(getattr(backbone.mad_backbone, 'out_channels', []))[-backbone.num_scales:]
-                else:
-                    in_channels_mad = None
+                in_channels_image = backbone.out_channels
             else:
                 rgb_all_channels = backbone.rgb.feature_channels + backbone.rgb.output_channels
                 in_channels_image = rgb_all_channels
-                if use_mad and hasattr(backbone, 'mad_backbone') and backbone.mad_backbone is not None:
-                    in_channels_mad = backbone.mad_backbone.out_channels
-                else:
-                    in_channels_mad = None
 
-            head = HybridHeadV2(
+            head = HybridHead(
                 num_classes=backbone.num_classes,
                 strides=backbone.strides,
-                in_channels_fused=backbone.out_channels,     # SNN-fused
-                in_channels_image=in_channels_image, # RGB-only
-                in_channels_mad=in_channels_mad, # MAD-only (None if disabled)
+                in_channels=backbone.out_channels,
+                act="silu",
+                depthwise=False,
                 args=args
             )
         elif use_snn:
             if use_sdt:
-                # 创建原始 backbone（返回时序特征 [T, B, C, H, W]）
                 raw_backbone = SpikformerV3Extractor(args, height=height, width=width, pretrained_weight=getattr(args, "load_pretrained_weight", None))
-                
-                # 如果不使用融合层，用包装器包装（适配层会转换为 [B, C, H, W]）
+
                 if not use_image:
                     from dagr.model.backbones.sdt_backbone_wrapper import SDTBackboneWrapper
                     backbone = SDTBackboneWrapper(raw_backbone)
                     print("[DAGR] Using SDTBackboneWrapper: backbone returns temporal features, adapter converts to spatial.")
                 else:
-                    # 使用融合层时，直接使用原始 backbone（返回时序特征给融合层处理）
                     backbone = raw_backbone
                     print("[DAGR] Using raw SDT backbone: returns temporal features for fusion layer.")
             head = YOLOXHead(num_classes=backbone.num_classes,
                              width=1.0,
                              strides=backbone.strides,
                              in_channels=backbone.out_channels)
-            
-            # --- Initialize biases for stability ---
+
             head.initialize_biases(1e-2)
-            # -----------------------------------------------
         else:
             backbone = Net(args, height=height, width=width)
             head = GNNHead(num_classes=backbone.num_classes,
@@ -301,7 +81,6 @@ class DAGR(YOLOX):
             init_subnetwork(self, state_dict['ema'], "head.cnn_head.")
 
     def cache_luts(self, width, height, radius):
-        # LUTs are specific to graph-based spline convs; skip when using SNN backbone.
         if isinstance(self.backbone, Net):
             M = 2 * float(int(radius * width + 2) / width)
             r = int(radius * width+1)
@@ -349,19 +128,12 @@ class DAGR(YOLOX):
 
             if self.backbone.use_image:
                 targets0 = convert_to_training_format(x.bbox0, x.bbox0_batch, x.num_graphs)
-
-                targets_tuple = (targets, targets0, targets)
+                targets_tuple = (targets, targets0)
                 outputs = YOLOX.forward(self, x, targets_tuple)
-
             else:
                 outputs = YOLOX.forward(self, x, targets)
 
             return outputs
-
-            # gt_target inputs need to be [l cx cy w h] in pixels
-            # outputs = YOLOX.forward(self, x, targets)
-
-            # return outputs
 
         x.reset = reset
 
@@ -382,7 +154,7 @@ class DAGR(YOLOX):
 class CNNHead(YOLOXHead):
     def __init__(self, num_classes, width=1.0, strides=[8, 16, 32], in_channels=[256, 512, 1024], act="silu", depthwise=False):
         super().__init__(num_classes, width, strides, in_channels, act, depthwise)
-    
+
     def forward(self, xin):
         outputs = dict(cls_output=[], reg_output=[], obj_output=[])
 
@@ -403,11 +175,9 @@ class CNNHead(YOLOXHead):
 
 class HybridHead(YOLOXHead):
     def __init__(self, num_classes, strides=[16, 32], in_channels=[256, 512], act="silu", depthwise=False, args=None):
-        # Use width=1.0 to match fused feature channels exactly, not scaled by yolo_stem_width
         YOLOXHead.__init__(self, num_classes, 1.0, strides, in_channels, act, depthwise)
         self.strides = strides
         self.num_scales = len(in_channels)
-        # Image-only head for auxiliary supervision
         self.image_head = CNNHead(num_classes=num_classes, width=1.0, strides=strides, in_channels=in_channels, act=act, depthwise=depthwise)
 
     def _forward_single(self, xin):
@@ -422,11 +192,9 @@ class HybridHead(YOLOXHead):
             outputs["reg_output"].append(self.reg_preds[k](reg_feat))
             outputs["obj_output"].append(self.obj_preds[k](reg_feat))
         return outputs
-    
+
     def collect_outputs(self, cls_output, reg_output, obj_output, k, stride_this_level, ret=None):
-        """Collect and process outputs - key: distinguish between training and inference"""
         if self.training:
-            # Training: decode bbox coordinates for loss calculation
             output = torch.cat([reg_output, obj_output, cls_output], 1)
             output, grid = self.get_output_and_grid(output, k, stride_this_level, output.type())
             ret['x_shifts'].append(grid[:, :, 0])
@@ -435,29 +203,26 @@ class HybridHead(YOLOXHead):
                 torch.zeros(1, grid.shape[1]).fill_(stride_this_level).type_as(output)
             )
         else:
-            # Inference: keep raw predictions, only add sigmoid
             output = torch.cat(
                 [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
             )
-        
+
         ret['outputs'].append(output)
 
     def forward(self, xin, labels=None, imgs=None):
-        fused_feats, image_feats = xin  # both are [BCHW] lists
+        fused_feats, image_feats = xin
 
-        # Compute raw outputs once
         out_fused = self._forward_single(fused_feats)
         out_image = self.image_head(image_feats)
 
         if self.training:
-            # Collect and process outputs for training
             fused_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
             image_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
 
             for k in range(self.num_scales):
-                self.collect_outputs(out_fused["cls_output"][k], out_fused["reg_output"][k], 
+                self.collect_outputs(out_fused["cls_output"][k], out_fused["reg_output"][k],
                                    out_fused["obj_output"][k], k, self.strides[k], ret=fused_ret)
-                self.collect_outputs(out_image["cls_output"][k], out_image["reg_output"][k], 
+                self.collect_outputs(out_image["cls_output"][k], out_image["reg_output"][k],
                                    out_image["obj_output"][k], k, self.strides[k], ret=image_ret)
 
             if isinstance(labels, tuple) and len(labels) == 2:
@@ -465,15 +230,14 @@ class HybridHead(YOLOXHead):
             else:
                 labels_fused, labels_image = labels, labels
 
-            # Outputs are already [B, H*W, C] after get_output_and_grid, directly concatenate
             losses_image = self.get_losses(
                 imgs,
                 image_ret['x_shifts'],
                 image_ret['y_shifts'],
                 image_ret['expanded_strides'],
                 labels_image,
-                torch.cat(image_ret['outputs'], 1),  # [B, total_anchors, C]
-                [],  # origin_preds not needed when use_l1=False
+                torch.cat(image_ret['outputs'], 1),
+                [],
                 dtype=image_feats[0].dtype,
             )
 
@@ -483,28 +247,26 @@ class HybridHead(YOLOXHead):
                 fused_ret['y_shifts'],
                 fused_ret['expanded_strides'],
                 labels_fused,
-                torch.cat(fused_ret['outputs'], 1),  # [B, total_anchors, C]
-                [],  # origin_preds not needed when use_l1=False
+                torch.cat(fused_ret['outputs'], 1),
+                [],
                 dtype=fused_feats[0].dtype,
             )
 
-            # Sum losses element-wise
             return tuple(l_img + l_fused for l_img, l_fused in zip(losses_image, losses_fused))
 
-        else:  # Inference
-            # Collect outputs for inference (no decoding in collect_outputs)
+        else:
             fused_ret = dict(outputs=[])
             for k in range(self.num_scales):
                 self.collect_outputs(out_fused["cls_output"][k], out_fused["reg_output"][k],
                                    out_fused["obj_output"][k], k, self.strides[k], ret=fused_ret)
 
             self.hw = [x.shape[-2:] for x in fused_ret['outputs']]
-            # Flatten and concatenate [B, C, H, W] -> [B, total_anchors, C]
             outputs = torch.cat(
                 [x.flatten(start_dim=2) for x in fused_ret['outputs']], dim=2
             ).permute(0, 2, 1)
 
             return self.decode_outputs(outputs, dtype=fused_feats[0].type())
+
 
 class GNNHead(YOLOXHead):
     def __init__(
@@ -566,7 +328,6 @@ class GNNHead(YOLOXHead):
         cls_feat = cls_conv(shallow_copy(x))
         reg_feat = reg_conv(x)
 
-        # we need to provide the batchsize, since sometimes it cannot be foudn from the data, especially when nodes=0
         cls_output = cls_pred(cls_feat, batch_size=batch_size)
         reg_output = reg_pred(shallow_copy(reg_feat), batch_size=batch_size)
         obj_output = obj_pred(reg_feat, batch_size=batch_size)
@@ -574,7 +335,6 @@ class GNNHead(YOLOXHead):
         return cls_output, reg_output, obj_output
 
     def forward(self, xin: Data, labels=None, imgs=None):
-        # for events + image outputs
         hybrid_out = dict(outputs=[], origin_preds=[], x_shifts=[], y_shifts=[], expanded_strides=[])
         image_out = dict(outputs=[], origin_preds=[], x_shifts=[], y_shifts=[], expanded_strides=[])
 
@@ -585,11 +345,9 @@ class GNNHead(YOLOXHead):
                 if self.use_image:
                     labels, image_labels = labels
 
-            # resize image, and process with CNN
             image_feat = [torch.nn.functional.interpolate(f, o) for f, o in zip(image_feat, self.output_sizes)]
             out_cnn = self.cnn_head(image_feat)
 
-            # collect outputs from image alone, so the image network also learns to detect on its own.
             for k in [0, 1]:
                 self.collect_outputs(out_cnn["cls_output"][k],
                                      out_cnn["reg_output"][k],
@@ -620,8 +378,6 @@ class GNNHead(YOLOXHead):
             self.collect_outputs(cls_output, reg_output, obj_output, 1, self.strides[1], ret=hybrid_out)
 
         if self.training:
-            # if we are only training the image detectors (pretraining),
-            # we only need to minimize the loss at detections from the image branch.
             if self.use_image:
                 losses_image = self.get_losses(
                     imgs,
@@ -635,16 +391,16 @@ class GNNHead(YOLOXHead):
                 )
 
                 if not self.pretrain_cnn:
-                    losses_events  = self.get_losses(
-                    imgs,
-                    hybrid_out['x_shifts'],
-                    hybrid_out['y_shifts'],
-                    hybrid_out['expanded_strides'],
-                    labels,
-                    torch.cat(hybrid_out['outputs'], 1),
-                    hybrid_out['origin_preds'],
-                    dtype=xin[0].x.dtype,
-                )
+                    losses_events = self.get_losses(
+                        imgs,
+                        hybrid_out['x_shifts'],
+                        hybrid_out['y_shifts'],
+                        hybrid_out['expanded_strides'],
+                        labels,
+                        torch.cat(hybrid_out['outputs'], 1),
+                        hybrid_out['origin_preds'],
+                        dtype=xin[0].x.dtype,
+                    )
 
                     losses_image = list(losses_image)
                     losses_events = list(losses_events)
@@ -668,7 +424,6 @@ class GNNHead(YOLOXHead):
             out = image_out['outputs'] if self.no_events else hybrid_out['outputs']
 
             self.hw = [x.shape[-2:] for x in out]
-            # [batch, n_anchors_all, 85]
             outputs = torch.cat([x.flatten(start_dim=2) for x in out], dim=2).permute(0, 2, 1)
 
             return self.decode_outputs(outputs, dtype=out[0].type())
@@ -694,4 +449,3 @@ class GNNHead(YOLOXHead):
         outputs[..., :2] = (outputs[..., :2] + self.grid_cache) * self.stride_cache
         outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * self.stride_cache
         return outputs
-
