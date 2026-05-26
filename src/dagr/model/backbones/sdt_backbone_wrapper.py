@@ -4,7 +4,9 @@ from dagr.model.layers.temporal_adapter import TemporalAdapter
 
 class SDTBackboneWrapper(nn.Module):
     """
-    包装 SpikformerV3Extractor，在 forward 中应用时序适配层
+    包装 SpikformerV3Extractor，在 forward 中应用时序适配层,
+    将 SpikformerV3Extractor 输出的 [T, B, C, H, W] 格式特征转换为 [B, C, H, W] 格式，以兼容后续的检测头。
+    仅用在单Event分支训练的场景，双分支场景下直接使用 SpikformerV3Extractor 作为 backbone，融合模块会处理时序特征。
     """
     
     def __init__(self, backbone):

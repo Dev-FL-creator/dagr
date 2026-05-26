@@ -14,6 +14,8 @@ from dagr.model.utils import shallow_copy, init_subnetwork, voxel_size_to_params
 
 
 class DAGR(YOLOX):
+    #输入为图像和事件数据，输出为检测结果。
+    #在训练模式下，计算双分支的总损失；在评估模式下，进行后处理得到最终的检测结果。
     def __init__(self, args, height, width):
         self.conf_threshold = 0.001
         self.nms_threshold = 0.65
@@ -27,7 +29,7 @@ class DAGR(YOLOX):
 
         use_image = hasattr(args, 'use_image') and getattr(args, 'use_image')
         print(f"Debug: use_image: {use_image}")
-
+        # 双分支
         if use_snn and getattr(args, 'use_image', False) and HybridBackbone is not None:
             print(f"Debug: running with 2-branch hybrid backbone (Fused, RGB)")
             backbone = HybridBackbone(args, height=height, width=width)
@@ -37,7 +39,7 @@ class DAGR(YOLOX):
             else:
                 rgb_all_channels = backbone.rgb.feature_channels + backbone.rgb.output_channels
                 in_channels_image = rgb_all_channels
-
+            # 双分支的head，融合分支和RGB分支分别有独立的head计算损失，训练时两者损失相加；评估时两者输出进行融合后处理得到最终检测结果
             head = HybridHead(
                 num_classes=backbone.num_classes,
                 strides=backbone.strides,
@@ -45,6 +47,7 @@ class DAGR(YOLOX):
                 in_channels_image=in_channels_image,
                 args=args
             )
+        # 单分支，仅 SNN
         elif use_snn:
             if use_sdt:
                 backbone = SpikformerV3Extractor(args, height=height, width=width, pretrained_weight=getattr(args, "load_pretrained_weight", None))
@@ -52,7 +55,7 @@ class DAGR(YOLOX):
                              width=1.0,
                              strides=backbone.strides,
                              in_channels=backbone.out_channels)
-
+        # 初始化父类 YOLOX，注册 backbone（HybridBackbone或SpikformerV3Extractor） 和 head（HybridHead 或 YOLOXHead）
         super().__init__(backbone=backbone, head=head)
 
         if "img_net_checkpoint" in args:
@@ -83,7 +86,7 @@ class DAGR(YOLOX):
 
         detections = postprocess_network_output(outputs, self.backbone.num_classes, self.conf_threshold, self.nms_threshold, filtering=filtering,
                                                 height=self.height, width=self.width)
-
+        #评估模式下，返回检测结果
         ret = [detections]
 
         if return_targets and hasattr(x, 'bbox'):
@@ -92,7 +95,7 @@ class DAGR(YOLOX):
 
         return ret
 
-
+# RGB分支的head，结构与融合分支的head相同，但参数独立，训练时计算RGB分支的损失
 class CNNHead(YOLOXHead):
     def __init__(self, num_classes, width=1.0, strides=[8, 16, 32], in_channels=[256, 512, 1024], act="silu", depthwise=False):
         super().__init__(num_classes, width, strides, in_channels, act, depthwise)
@@ -197,7 +200,7 @@ class HybridHead(YOLOXHead):
 
         out_fused = self._forward_single(fused_feats)
         out_image = self.image_head(image_feats)
-
+        #训练模式下，计算双分支的总损失
         if self.training:
             fused_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
             image_ret = dict(outputs=[], x_shifts=[], y_shifts=[], expanded_strides=[])
@@ -251,7 +254,7 @@ class HybridHead(YOLOXHead):
                 l_img + l_fused
                 for l_img, l_fused in zip(losses_image, losses_fused)
             )
-
+        #评估模式下，进行后处理得到最终的检测结果
         else:
             fused_ret = dict(outputs=[])
             for k in range(self.num_scales):

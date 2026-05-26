@@ -7,7 +7,7 @@ from dagr.model.backbones.sdt_v3_trilinear_mean import SpikformerV3Extractor
 
 
 class HybridBackbone(nn.Module):
-
+    #多尺度特征通过SpikeCAFR融合，forward 返回 fused（融合后的特征列表）和 rgb_only（仅 RGB 的特征列表）
     def __init__(self, args, height: int, width: int):
         super().__init__()
         self.height = int(height)

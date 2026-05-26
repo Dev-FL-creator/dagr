@@ -38,7 +38,7 @@ class ConvBlockDense(torch.nn.Module):
             x = self.act(x)
         return x
 
-
+#抓取image backbone的中间特征和输出特征,用于后续与Event分支融合
 class HookModule(torch.nn.Module):
     def __init__(self, module, height, width, input_channels=3, feature_layers=(), output_layers=(), feature_channels=None, output_channels=None):
         torch.nn.Module.__init__(self)
